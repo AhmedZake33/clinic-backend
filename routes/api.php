@@ -45,9 +45,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/doctors/{doctor}/holidays/{holiday}', [DoctorScheduleController::class, 'deleteHoliday']);
     });
     
-    // Assistant can create reservations
+    // Assistant can create and confirm reservations
     Route::middleware(['role:assistant'])->group(function () {
         Route::post('/reservations', [ReservationController::class, 'store']);
+        Route::post('/reservations/{reservation}/confirm', [ReservationController::class, 'confirm']);
     });
 
     // Doctor can complete reservations

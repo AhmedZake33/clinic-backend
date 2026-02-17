@@ -42,7 +42,6 @@ class ReservationController extends Controller
         if ($to = $request->query('date_to')) {
             $query->whereDate('appointment_date', '<=', $to);
         }
-
         // Search by client name or notes
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
@@ -161,6 +160,20 @@ class ReservationController extends Controller
         return response()->json($reservation);
     }
 
+    /**
+     * Valid status transitions:
+     *   pending   → confirmed, cancelled
+     *   confirmed → completed, cancelled
+     *   completed → (terminal)
+     *   cancelled → (terminal)
+     */
+    private const STATUS_TRANSITIONS = [
+        'pending'   => ['confirmed', 'cancelled'],
+        'confirmed' => ['completed', 'cancelled'],
+        'completed' => [],
+        'cancelled' => [],
+    ];
+
     public function update(Request $request, Reservation $reservation)
     {
         $request->validate([
@@ -171,12 +184,46 @@ class ReservationController extends Controller
             'notes' => 'nullable|string',
             'diagnosis' => 'nullable|string',
             'treatment' => 'nullable|string',
+            'requires_xray' => 'nullable|boolean',
+            'xray_notes' => 'nullable|string',
+            'requires_lab' => 'nullable|boolean',
+            'lab_notes' => 'nullable|string',
         ]);
+
+        $newStatus = $request->status;
+        $currentStatus = $reservation->status;
+
+        // Validate status transition
+        if ($newStatus !== $currentStatus) {
+            $allowed = self::STATUS_TRANSITIONS[$currentStatus] ?? [];
+            if (!in_array($newStatus, $allowed)) {
+                return response()->json([
+                    'error' => "Cannot change status from {$currentStatus} to {$newStatus}",
+                ], 422);
+            }
+        }
 
         $reservation->update($request->all());
         $reservation->load(['client', 'doctor', 'creator']);
 
         // Broadcast event for real-time updates (exclude the sender)
+        broadcast(new ReservationUpdated($reservation))->toOthers();
+
+        return response()->json($reservation);
+    }
+
+    /**
+     * Confirm a pending reservation (assistant only)
+     */
+    public function confirm(Request $request, Reservation $reservation)
+    {
+        if ($reservation->status !== 'pending') {
+            return response()->json(['error' => 'Only pending reservations can be confirmed'], 422);
+        }
+
+        $reservation->update(['status' => 'confirmed']);
+        $reservation->load(['client', 'doctor', 'creator']);
+
         broadcast(new ReservationUpdated($reservation))->toOthers();
 
         return response()->json($reservation);
@@ -197,12 +244,20 @@ class ReservationController extends Controller
         $request->validate([
             'diagnosis' => 'nullable|string',
             'treatment' => 'nullable|string',
+            'requires_xray' => 'nullable|boolean',
+            'xray_notes' => 'nullable|string',
+            'requires_lab' => 'nullable|boolean',
+            'lab_notes' => 'nullable|string',
         ]);
 
         $reservation->update([
             'status' => 'completed',
             'diagnosis' => $request->diagnosis,
             'treatment' => $request->treatment,
+            'requires_xray' => $request->boolean('requires_xray'),
+            'xray_notes' => $request->requires_xray ? $request->xray_notes : null,
+            'requires_lab' => $request->boolean('requires_lab'),
+            'lab_notes' => $request->requires_lab ? $request->lab_notes : null,
             'completed_at' => now(),
         ]);
 
