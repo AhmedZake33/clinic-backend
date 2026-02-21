@@ -5,6 +5,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\DoctorScheduleController;
 use App\Http\Controllers\FinancialController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reservations/{reservation}', [ReservationController::class, 'show']);
         Route::put('/reservations/{reservation}', [ReservationController::class, 'update']);
         Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy']);
+
+        Route::get('/reports/summary', [ReportController::class, 'summary']);
+        Route::get('/reports/pdf', [ReportController::class, 'exportPdf']);
     });
 
     // Financial routes

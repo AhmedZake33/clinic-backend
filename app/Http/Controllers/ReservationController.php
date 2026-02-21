@@ -309,127 +309,153 @@ class ReservationController extends Controller
         // Load relationships
         $reservation->load(['client', 'doctor', 'creator']);
 
-        // Create new PDF document
+        $lang = strtolower((string) ($request->query('lang') ?: $request->header('Accept-Language', 'en')));
+        $isArabic = str_starts_with($lang, 'ar');
+
+        $labels = $isArabic
+            ? [
+                'clinic' => 'العيادة الطبية',
+                'title' => 'الوصفة الطبية',
+                'patientInfo' => 'معلومات المريض',
+                'name' => 'الاسم',
+                'email' => 'البريد الإلكتروني',
+                'phone' => 'الهاتف',
+                'dob' => 'تاريخ الميلاد',
+                'doctorInfo' => 'معلومات الطبيب',
+                'doctor' => 'الطبيب',
+                'date' => 'التاريخ',
+                'diagnosis' => 'التشخيص',
+                'treatment' => 'خطة العلاج',
+                'medicalHistory' => 'التاريخ المرضي',
+                'signature' => 'التوقيع الرقمي',
+                'notes' => 'هذه وصفة طبية مولدة رقمياً. يرجى استشارة طبيبك لأي أسئلة أو مخاوف.',
+                'noDiagnosis' => 'لم يتم تقديم تشخيص.',
+                'noTreatment' => 'لم يتم تقديم خطة علاج.',
+                'xrayRequired' => 'يتطلب أشعة سينية',
+                'labRequired' => 'يتطلب تحاليل مختبرية',
+                'xrayNotes' => 'ملاحظات الأشعة',
+                'labNotes' => 'ملاحظات التحاليل',
+            ]
+            : [
+                'clinic' => 'Medical Clinic',
+                'title' => 'Medical Prescription',
+                'patientInfo' => 'Patient Information',
+                'name' => 'Name',
+                'email' => 'Email',
+                'phone' => 'Phone',
+                'dob' => 'DOB',
+                'doctorInfo' => 'Doctor Information',
+                'doctor' => 'Doctor',
+                'date' => 'Date',
+                'diagnosis' => 'Diagnosis',
+                'treatment' => 'Treatment Plan',
+                'medicalHistory' => 'Medical History',
+                'signature' => 'Digital Signature',
+                'notes' => 'This is a digitally generated prescription. Please consult your doctor for any questions or concerns.',
+                'noDiagnosis' => 'No diagnosis provided.',
+                'noTreatment' => 'No treatment plan provided.',
+                'xrayRequired' => 'Requires X-Ray',
+                'labRequired' => 'Requires Lab Tests',
+                'xrayNotes' => 'X-Ray Notes',
+                'labNotes' => 'Lab Notes',
+            ];
+
+        $align = $isArabic ? 'R' : 'L';
+
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
-        
-        // Set document information
         $pdf->SetCreator('Medical Clinic System');
         $pdf->SetAuthor('Dr. ' . $reservation->doctor->name);
-        $pdf->SetTitle('Medical Prescription');
-        $pdf->SetSubject('Prescription for ' . $reservation->client->name);
-        
-        // Remove default header/footer
+        $pdf->SetTitle($labels['title']);
+        $pdf->SetSubject($labels['title'] . ' - ' . $reservation->client->name);
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
-        
-        // Enable RTL for Arabic support
-        $pdf->setRTL(true);
-        
-        // Set margins
+        $pdf->setRTL($isArabic);
         $pdf->SetMargins(15, 20, 15);
         $pdf->SetAutoPageBreak(true, 25);
-        
-        // Add a page
         $pdf->AddPage();
-        
-        // Set font for Arabic support
         $pdf->SetFont('dejavusans', '', 12);
-        
-        // Clinic Header - Bilingual Arabic/English
+
         $pdf->SetFillColor(44, 90, 160);
         $pdf->SetTextColor(255, 255, 255);
-        $pdf->Cell(0, 12, 'العيادة الطبية - Medical Clinic', 0, 1, 'C', 1);
-        $pdf->SetTextColor(0, 0, 0);
-        $pdf->Ln(5);
-        
-        // Title - Bilingual
         $pdf->SetFont('dejavusans', 'B', 16);
-        $pdf->Cell(0, 10, 'الوصفة الطبية - MEDICAL PRESCRIPTION', 0, 1, 'C');
-        $pdf->Ln(10);
-        
-        // Patient Information - Bilingual
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->SetFillColor(248, 249, 250);
-        $pdf->Cell(0, 8, 'معلومات المريض - Patient Information', 0, 1, 'C', 1);
-        $pdf->Ln(2);
-        
-        $pdf->SetFont('dejavusans', '', 10);
-        $pdf->Cell(50, 6, 'الاسم - Name:', 0, 0, 'R');
-        $pdf->Cell(0, 6, $reservation->client->name, 0, 1, 'R');
-        $pdf->Cell(50, 6, 'البريد - Email:', 0, 0, 'R');
-        $pdf->Cell(0, 6, $reservation->client->email, 0, 1, 'R');
-        $pdf->Cell(50, 6, 'الهاتف - Phone:', 0, 0, 'R');
-        $pdf->Cell(0, 6, $reservation->client->phone, 0, 1, 'R');
-        
-        if ($reservation->client->date_of_birth) {
-            $pdf->Cell(50, 6, 'تاريخ الميلاد - DOB:', 0, 0, 'R');
-            $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), 0, 1, 'R');
-        }
-        
-        $pdf->Ln(5);
-        
-        // Doctor Information - Bilingual
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, 'معلومات الطبيب - Doctor Information', 0, 1, 'C', 1);
-        $pdf->Ln(2);
-        
-        $pdf->SetFont('dejavusans', '', 10);
-        $pdf->Cell(50, 6, 'الطبيب - Doctor:', 0, 0, 'R');
-        $pdf->Cell(0, 6, 'د. ' . $reservation->doctor->name, 0, 1, 'R');
-        $pdf->Cell(50, 6, 'التاريخ - Date:', 0, 0, 'R');
-        $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y \\a\\t H:i A'), 0, 1, 'R');
-        
-        $pdf->Ln(10);
-        
-        // Diagnosis Section - Bilingual
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, 'التشخيص - Diagnosis', 0, 1, 'C', 1);
-        $pdf->Ln(2);
-        
-        $pdf->SetFont('dejavusans', '', 10);
-        $diagnosis = $reservation->diagnosis ?? 'لم يتم تقديم تشخيص - No diagnosis provided.';
-        $pdf->MultiCell(0, 6, $diagnosis, 1, 'R');
-        
-        $pdf->Ln(5);
-        
-        // Treatment Section - Bilingual
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, 'خطة العلاج والوصفة - Treatment Plan & Prescription', 0, 1, 'C', 1);
-        $pdf->Ln(2);
-        
-        $pdf->SetFont('dejavusans', '', 10);
-        $treatment = $reservation->treatment ?? 'لم يتم تقديم خطة علاج - No treatment plan provided.';
-        $pdf->MultiCell(0, 6, $treatment, 1, 'R');
-        
-        $pdf->Ln(5);
-        
-        // Medical History (if available) - Bilingual
-        if ($reservation->client->medical_history) {
-            $pdf->SetFont('dejavusans', 'B', 12);
-            $pdf->Cell(0, 8, 'التاريخ المرضي - Medical History', 0, 1, 'C', 1);
-            $pdf->Ln(2);
-            
-            $pdf->SetFont('dejavusans', '', 10);
-            $pdf->MultiCell(0, 6, $reservation->client->medical_history, 1, 'R');
-            $pdf->Ln(5);
-        }
-        
-        // Footer with signature - Bilingual
-        $pdf->Ln(20);
-        $pdf->SetFont('dejavusans', '', 10);
-        $pdf->Cell(100, 6, 'التاريخ - Date: ' . \Carbon\Carbon::now()->format('F d, Y'), 0, 0, 'R');
-        $pdf->Cell(0, 6, 'د. ' . $reservation->doctor->name, 0, 1, 'L');
-        $pdf->Cell(100, 6, '', 0, 0, 'L');
-        $pdf->Cell(0, 6, str_repeat('_', 30), 0, 1, 'L');
-        $pdf->Cell(100, 6, '', 0, 0, 'L');
-        $pdf->Cell(0, 6, 'التوقيع الرقمي - Digital Signature', 0, 1, 'L');
-        
-        $pdf->Ln(10);
-        $pdf->SetFont('dejavusans', 'I', 8);
-        $pdf->Cell(0, 6, 'هذه وصفة طبية مولدة رقمياً. يرجى استشارة طبيبك لأي أسئلة أو مخاوف.', 0, 1, 'C');
-        $pdf->Cell(0, 6, 'This is a digitally generated prescription. Please consult with your doctor for any questions or concerns.', 0, 1, 'C');
+        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Ln(4);
+        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
+        $pdf->Ln(4);
 
-        $fileName = 'prescription_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['patientInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->Cell(50, 6, $labels['name'] . ':', 0, 0, $align);
+        $pdf->Cell(0, 6, $reservation->client->name, 0, 1, $align);
+        $pdf->Cell(50, 6, $labels['email'] . ':', 0, 0, $align);
+        $pdf->Cell(0, 6, $reservation->client->email, 0, 1, $align);
+        $pdf->Cell(50, 6, $labels['phone'] . ':', 0, 0, $align);
+        $pdf->Cell(0, 6, $reservation->client->phone, 0, 1, $align);
+        if ($reservation->client->date_of_birth) {
+            $pdf->Cell(50, 6, $labels['dob'] . ':', 0, 0, $align);
+            $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), 0, 1, $align);
+        }
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['doctorInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->Cell(50, 6, $labels['doctor'] . ':', 0, 0, $align);
+        $pdf->Cell(0, 6, 'Dr. ' . $reservation->doctor->name, 0, 1, $align);
+        $pdf->Cell(50, 6, $labels['date'] . ':', 0, 0, $align);
+        $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y H:i'), 0, 1, $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['diagnosis'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->MultiCell(0, 6, $reservation->diagnosis ?: $labels['noDiagnosis'], 1, $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['treatment'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->MultiCell(0, 6, $reservation->treatment ?: $labels['noTreatment'], 1, $align);
+
+        if ($reservation->requires_xray || $reservation->requires_lab) {
+            $pdf->Ln(4);
+            $pdf->SetFont('dejavusans', 'B', 12);
+            $pdf->Cell(0, 8, $isArabic ? 'متطلبات إضافية' : 'Additional Requirements', 0, 1, $align, 1);
+            $pdf->SetFont('dejavusans', '', 10);
+            if ($reservation->requires_xray) {
+                $pdf->Cell(0, 6, '- ' . $labels['xrayRequired'], 0, 1, $align);
+                if ($reservation->xray_notes) {
+                    $pdf->MultiCell(0, 6, $labels['xrayNotes'] . ': ' . $reservation->xray_notes, 0, $align);
+                }
+            }
+            if ($reservation->requires_lab) {
+                $pdf->Cell(0, 6, '- ' . $labels['labRequired'], 0, 1, $align);
+                if ($reservation->lab_notes) {
+                    $pdf->MultiCell(0, 6, $labels['labNotes'] . ': ' . $reservation->lab_notes, 0, $align);
+                }
+            }
+        }
+
+        if ($reservation->client->medical_history) {
+            $pdf->Ln(4);
+            $pdf->SetFont('dejavusans', 'B', 12);
+            $pdf->Cell(0, 8, $labels['medicalHistory'], 0, 1, $align, 1);
+            $pdf->SetFont('dejavusans', '', 10);
+            $pdf->MultiCell(0, 6, $reservation->client->medical_history, 1, $align);
+        }
+
+        $pdf->Ln(12);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->Cell(0, 6, $labels['signature'] . ': Dr. ' . $reservation->doctor->name, 0, 1, $align);
+        $pdf->Cell(0, 6, str_repeat('_', 40), 0, 1, $align);
+        $pdf->Ln(5);
+        $pdf->SetFont('dejavusans', 'I', 8);
+        $pdf->MultiCell(0, 6, $labels['notes'], 0, 'C');
+
+        $filePrefix = $isArabic ? 'prescription-ar' : 'prescription-en';
+        $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
         
         return response($pdf->Output($fileName, 'S'))
             ->header('Content-Type', 'application/pdf')
