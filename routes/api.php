@@ -7,6 +7,7 @@ use App\Http\Controllers\DoctorScheduleController;
 use App\Http\Controllers\FinancialController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OpenFdaController;
+use App\Http\Controllers\CheckInController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -70,6 +71,17 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Both doctor and assistant can view reservations
+    // Check-in & Waiting Queue routes
+    Route::middleware(['role:assistant'])->group(function () {
+        Route::post('/reservations/{reservation}/check-in', [CheckInController::class, 'checkIn']);
+        Route::post('/reservations/{reservation}/undo-check-in', [CheckInController::class, 'undoCheckIn']);
+    });
+
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/waiting-queue', [CheckInController::class, 'waitingQueue']);
+        Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary']);
+    });
+
     Route::middleware(['role:doctor,assistant'])->group(function () {
         Route::get('/reservations', [ReservationController::class, 'index']);
         Route::get('/reservations/{reservation}', [ReservationController::class, 'show']);
