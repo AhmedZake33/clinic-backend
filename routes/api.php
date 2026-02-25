@@ -6,6 +6,7 @@ use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\DoctorScheduleController;
 use App\Http\Controllers\FinancialController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\OpenFdaController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -56,6 +57,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware(['role:doctor'])->group(function () {
         Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete']);
         Route::get('/reservations/{reservation}/prescription', [ReservationController::class, 'generatePrescription']);
+    });
+
+    // OpenFDA drug search (accessible by doctors)
+    Route::middleware(['role:doctor'])->group(function () {
+        Route::get('/openfda/drugs', [OpenFdaController::class, 'searchDrugs']);
+        Route::get('/openfda/drug-details', [OpenFdaController::class, 'drugDetails']);
+
+        // Egypt drug database
+        Route::get('/egypt-drugs/search', [OpenFdaController::class, 'searchEgyptDrugs']);
+        Route::get('/egypt-drugs/filters', [OpenFdaController::class, 'egyptDrugFilters']);
     });
 
     // Both doctor and assistant can view reservations
