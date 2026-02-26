@@ -16,20 +16,16 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create a doctor
-        User::create([
-            'name' => 'Dr. John Smith',
-            'email' => 'doctor@clinic.com',
-            'password' => Hash::make('password'),
-            'role' => 'doctor',
-        ]);
+        // Seed admin and sample doctor
+        $this->call(AdminUserSeeder::class);
 
-        // Create an assistant
+        // Create an assistant (will be assigned to doctor later)
         User::create([
             'name' => 'Sarah Johnson',
             'email' => 'assistant@clinic.com',
             'password' => Hash::make('password'),
             'role' => 'assistant',
+            'doctor_id' => 2, // Assuming doctor ID is 2
         ]);
 
         // Create a client user

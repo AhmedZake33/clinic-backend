@@ -17,6 +17,7 @@ class Client extends Model
         'address',
         'medical_history',
         'created_by',
+        'doctor_id',
     ];
 
     protected $casts = [
@@ -26,6 +27,11 @@ class Client extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function doctor()
+    {
+        return $this->belongsTo(User::class, 'doctor_id');
     }
 
     public function reservations()

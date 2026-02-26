@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Reservation;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -9,12 +10,19 @@ use Illuminate\Support\Facades\DB;
 
 class CheckInController extends Controller
 {
+    use ResolvesDoctor;
+
     /**
      * Check in a patient for their reservation.
      * Assigns a waiting number based on the daily queue for that doctor.
      */
     public function checkIn(Request $request, Reservation $reservation)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
         if ($reservation->checked_in_at) {
             return response()->json([
                 'error' => 'Patient is already checked in',
@@ -59,6 +67,12 @@ class CheckInController extends Controller
      */
     public function undoCheckIn(Request $request, Reservation $reservation)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         if (!$reservation->checked_in_at) {
             return response()->json(['error' => 'Patient is not checked in'], 422);
         }
@@ -86,21 +100,13 @@ class CheckInController extends Controller
      */
     public function waitingQueue(Request $request)
     {
+        $doctorId = $this->requireDoctorId($request);
         $date = $request->query('date', Carbon::today()->toDateString());
-        $doctorId = $request->query('doctor_id');
-
-        // If doctor is requesting, only show their own queue
-        if ($request->user()->role === 'doctor') {
-            $doctorId = $request->user()->id;
-        }
 
         $query = Reservation::with(['client', 'doctor'])
             ->whereDate('appointment_date', $date)
-            ->whereNotNull('checked_in_at');
-
-        if ($doctorId) {
-            $query->where('doctor_id', $doctorId);
-        }
+            ->whereNotNull('checked_in_at')
+            ->where('doctor_id', $doctorId);
 
         // Order: non-completed first by waiting number, then completed at bottom
         $queue = $query->orderByRaw("CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC")
@@ -155,12 +161,14 @@ class CheckInController extends Controller
      */
     public function queueSummary(Request $request)
     {
+        $doctorId = $this->requireDoctorId($request);
         $date = $request->query('date', Carbon::today()->toDateString());
 
         $summary = DB::table('reservations')
             ->join('users', 'reservations.doctor_id', '=', 'users.id')
             ->whereDate('reservations.appointment_date', $date)
             ->whereNotNull('reservations.checked_in_at')
+            ->where('reservations.doctor_id', $doctorId)
             ->select(
                 'reservations.doctor_id',
                 'users.name as doctor_name',

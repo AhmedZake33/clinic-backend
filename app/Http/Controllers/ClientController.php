@@ -2,14 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Client;
 use Illuminate\Http\Request;
 
 class ClientController extends Controller
 {
+    use ResolvesDoctor;
+
     public function index(Request $request)
     {
-        $query = Client::with('creator');
+        $doctorId = $this->requireDoctorId($request);
+
+        $query = Client::with('creator')
+            ->where('doctor_id', $doctorId);
 
         // Optional search by name/email/phone
         if ($search = $request->query('search')) {
@@ -34,6 +40,8 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
+        $doctorId = $this->requireDoctorId($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:clients',
@@ -51,19 +59,32 @@ class ClientController extends Controller
             'address' => $request->address,
             'medical_history' => $request->medical_history,
             'created_by' => $request->user()->id,
+            'doctor_id' => $doctorId,
         ]);
 
         return response()->json($client, 201);
     }
 
-    public function show(Client $client)
+    public function show(Request $request, Client $client)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($client->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $client->load(['creator', 'reservations.doctor']);
         return response()->json($client);
     }
 
     public function update(Request $request, Client $client)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($client->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:clients,email,' . $client->id,
@@ -73,13 +94,21 @@ class ClientController extends Controller
             'medical_history' => 'nullable|string',
         ]);
 
-        $client->update($request->all());
+        $client->update($request->only([
+            'name', 'email', 'phone', 'date_of_birth', 'address', 'medical_history',
+        ]));
 
         return response()->json($client);
     }
 
-    public function destroy(Client $client)
+    public function destroy(Request $request, Client $client)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($client->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $client->delete();
         return response()->json(['message' => 'Client deleted successfully']);
     }

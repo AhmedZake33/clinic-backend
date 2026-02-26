@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\DoctorScheduleController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\FinancialController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OpenFdaController;
 use App\Http\Controllers\CheckInController;
+use App\Http\Controllers\AdminController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -25,13 +27,25 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
+    // Admin routes
+    Route::middleware(['role:admin'])->group(function () {
+        Route::get('/admin/doctors', [AdminController::class, 'indexDoctors']);
+        Route::post('/admin/doctors', [AdminController::class, 'storeDoctor']);
+        Route::get('/admin/doctors/{doctor}', [AdminController::class, 'showDoctor']);
+        Route::put('/admin/doctors/{doctor}', [AdminController::class, 'updateDoctor']);
+        Route::delete('/admin/doctors/{doctor}', [AdminController::class, 'destroyDoctor']);
+        Route::get('/admin/subscription-stats', [AdminController::class, 'subscriptionStats']);
+    });
+
     // Client routes - accessible by doctor and assistant
     Route::middleware(['role:doctor,assistant'])->group(function () {
         Route::apiResource('clients', ClientController::class);
     });
 
-    // Reservation routes
-    Route::get('/doctors', [ReservationController::class, 'doctors']);
+    // Reservation routes - doctors list (tenant-scoped)
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/doctors', [ReservationController::class, 'doctors']);
+    });
 
     // Doctor schedule routes
     // Assistants can view doctor schedules to book appropriately
@@ -41,11 +55,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/doctors/{doctor}/available-times', [DoctorScheduleController::class, 'getAvailableTimes']);
     });
 
-    // Doctors manage their own schedule
+    // Doctors manage their own schedule and assistants
     Route::middleware(['role:doctor'])->group(function () {
         Route::put('/doctors/{doctor}/availability', [DoctorScheduleController::class, 'updateAvailability']);
         Route::post('/doctors/{doctor}/holidays', [DoctorScheduleController::class, 'addHoliday']);
         Route::delete('/doctors/{doctor}/holidays/{holiday}', [DoctorScheduleController::class, 'deleteHoliday']);
+
+        // Assistant management
+        Route::get('/assistants', [AssistantController::class, 'index']);
+        Route::post('/assistants', [AssistantController::class, 'store']);
+        Route::put('/assistants/{assistant}', [AssistantController::class, 'update']);
+        Route::delete('/assistants/{assistant}', [AssistantController::class, 'destroy']);
     });
     
     // Assistant can create and confirm reservations

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Financial;
 use App\Models\Reservation;
 use App\Models\User;
@@ -10,6 +11,7 @@ use TCPDF;
 
 class ReportController extends Controller
 {
+    use ResolvesDoctor;
     public function summary(Request $request)
     {
         return response()->json($this->buildSummary($request));
@@ -144,18 +146,12 @@ class ReportController extends Controller
 
     private function buildSummary(Request $request): array
     {
-        $user = $request->user();
+        $doctorId = $this->requireDoctorId($request);
         $dateFrom = $request->query('date_from');
         $dateTo = $request->query('date_to');
-        $doctorId = $user->role === 'doctor' ? $user->id : $request->query('doctor_id');
 
-        $reservationsQuery = Reservation::query();
-        $financialsQuery = Financial::query();
-
-        if ($doctorId) {
-            $reservationsQuery->where('doctor_id', $doctorId);
-            $financialsQuery->where('doctor_id', $doctorId);
-        }
+        $reservationsQuery = Reservation::query()->where('doctor_id', $doctorId);
+        $financialsQuery = Financial::query()->where('doctor_id', $doctorId);
 
         if ($dateFrom) {
             $reservationsQuery->whereDate('appointment_date', '>=', $dateFrom);

@@ -23,6 +23,12 @@ class CheckRole
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        // Additional check: ensure doctor's subscription is active
+        $user = $request->user();
+        if ($user->role === 'doctor' && $user->isSubscriptionExpired()) {
+            return response()->json(['error' => 'Subscription expired. Please contact administrator.'], 403);
+        }
+
         return $next($request);
     }
 }

@@ -2,27 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Financial;
 use App\Models\Reservation;
 use Illuminate\Http\Request;
 
 class FinancialController extends Controller
 {
+    use ResolvesDoctor;
+
     public function index(Request $request)
     {
-        $query = Financial::with(['reservation', 'client', 'doctor', 'creator']);
+        $doctorId = $this->requireDoctorId($request);
 
-        // Filter by role
-        if ($request->user()->role === 'doctor') {
-            $query->where('doctor_id', $request->user()->id);
-        }
-
-        // Filter by doctor (for assistants)
-        if ($request->user()->role !== 'doctor') {
-            if ($doctorId = $request->query('doctor_id')) {
-                $query->where('doctor_id', $doctorId);
-            }
-        }
+        $query = Financial::with(['reservation', 'client', 'doctor', 'creator'])
+            ->where('doctor_id', $doctorId);
 
         // Filter by payment status
         if ($status = $request->query('payment_status')) {
@@ -55,6 +49,8 @@ class FinancialController extends Controller
 
     public function store(Request $request)
     {
+        $doctorId = $this->requireDoctorId($request);
+
         $request->validate([
             'reservation_id' => 'required|exists:reservations,id',
             'amount' => 'required|numeric|min:0',
@@ -63,7 +59,9 @@ class FinancialController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $reservation = Reservation::with('client')->findOrFail($request->reservation_id);
+        $reservation = Reservation::with('client')
+            ->where('doctor_id', $doctorId)
+            ->findOrFail($request->reservation_id);
 
         $paid = $request->paid ?? 0;
         $amount = $request->amount;
@@ -98,14 +96,26 @@ class FinancialController extends Controller
         return response()->json($financial, 201);
     }
 
-    public function show(Financial $financial)
+    public function show(Request $request, Financial $financial)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($financial->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $financial->load(['reservation', 'client', 'doctor', 'creator']);
         return response()->json($financial);
     }
 
     public function update(Request $request, Financial $financial)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($financial->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'amount' => 'required|numeric|min:0',
             'paid' => 'nullable|numeric|min:0',
@@ -141,8 +151,14 @@ class FinancialController extends Controller
         return response()->json($financial);
     }
 
-    public function destroy(Financial $financial)
+    public function destroy(Request $request, Financial $financial)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($financial->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $financial->delete();
         return response()->json(['message' => 'Financial record deleted']);
     }
@@ -152,15 +168,10 @@ class FinancialController extends Controller
      */
     public function summary(Request $request)
     {
-        $query = Financial::query();
+        $doctorId = $this->requireDoctorId($request);
 
-        if ($request->user()->role === 'doctor') {
-            $query->where('doctor_id', $request->user()->id);
-        }
-
-        if ($doctorId = $request->query('doctor_id')) {
-            $query->where('doctor_id', $doctorId);
-        }
+        $query = Financial::query()
+            ->where('doctor_id', $doctorId);
 
         if ($from = $request->query('date_from')) {
             $query->whereDate('created_at', '>=', $from);

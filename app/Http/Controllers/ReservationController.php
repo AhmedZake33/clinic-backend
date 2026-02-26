@@ -6,6 +6,7 @@ use App\Events\ReservationCreated;
 use App\Events\ReservationUpdated;
 use App\Events\ReservationCompleted;
 use App\Events\ReservationDeleted;
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Financial;
 use App\Models\Reservation;
 use App\Models\User;
@@ -14,25 +15,18 @@ use TCPDF;
 
 class ReservationController extends Controller
 {
+    use ResolvesDoctor;
+
     public function index(Request $request)
     {
-        $query = Reservation::with(['client', 'doctor', 'creator']);
+        $doctorId = $this->requireDoctorId($request);
 
-        // Filter by role
-        if ($request->user()->role === 'doctor') {
-            $query->where('doctor_id', $request->user()->id);
-        }
+        $query = Reservation::with(['client', 'doctor', 'creator'])
+            ->where('doctor_id', $doctorId);
 
         // Optional filters
         if ($status = $request->query('status')) {
             $query->where('status', $status);
-        }
-
-        // Assistant can filter by doctor_id; doctor filter is already enforced
-        if ($request->user()->role !== 'doctor') {
-            if ($doctorId = $request->query('doctor_id')) {
-                $query->where('doctor_id', $doctorId);
-            }
         }
 
         // Date range based on appointment_date
@@ -57,9 +51,10 @@ class ReservationController extends Controller
 
     public function store(Request $request)
     {
+        $doctorId = $this->requireDoctorId($request);
+
         $request->validate([
             'client_id' => 'required|exists:clients,id',
-            'doctor_id' => 'required|exists:users,id',
             'appointment_date' => 'required|string',
             'notes' => 'nullable|string',
             'amount' => 'required|numeric|min:0',
@@ -67,10 +62,15 @@ class ReservationController extends Controller
             'payment_method' => 'required|in:cash,card,transfer,other',
         ]);
 
-        // Verify doctor role
-        $doctor = User::findOrFail($request->doctor_id);
-        if ($doctor->role !== 'doctor') {
-            return response()->json(['error' => 'Selected user is not a doctor'], 422);
+        // Use the tenant doctor
+        $doctor = User::where('id', $doctorId)->where('role', 'doctor')->firstOrFail();
+
+        // Verify client belongs to this doctor
+        $client = \App\Models\Client::where('id', $request->client_id)
+            ->where('doctor_id', $doctorId)
+            ->first();
+        if (!$client) {
+            return response()->json(['error' => 'Client does not belong to this doctor'], 422);
         }
 
         // Validate appointment against doctor's schedule and holidays
@@ -109,7 +109,7 @@ class ReservationController extends Controller
 
         $reservation = Reservation::create([
             'client_id' => $request->client_id,
-            'doctor_id' => $request->doctor_id,
+            'doctor_id' => $doctorId,
             'created_by' => $request->user()->id,
             'appointment_date' => $request->appointment_date,
             'notes' => $request->notes,
@@ -127,7 +127,7 @@ class ReservationController extends Controller
         Financial::create([
             'reservation_id' => $reservation->id,
             'client_id' => $request->client_id,
-            'doctor_id' => $request->doctor_id,
+            'doctor_id' => $doctorId,
             'created_by' => $request->user()->id,
             'amount' => $amount,
             'paid' => $paid,
@@ -154,8 +154,14 @@ class ReservationController extends Controller
         return response()->json($response, 201);
     }
 
-    public function show(Reservation $reservation)
+    public function show(Request $request, Reservation $reservation)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $reservation->load(['client', 'doctor', 'creator']);
         return response()->json($reservation);
     }
@@ -176,6 +182,12 @@ class ReservationController extends Controller
 
     public function update(Request $request, Reservation $reservation)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'client_id' => 'required|exists:clients,id',
             'doctor_id' => 'required|exists:users,id',
@@ -269,8 +281,14 @@ class ReservationController extends Controller
         return response()->json($reservation);
     }
 
-    public function destroy(Reservation $reservation)
+    public function destroy(Request $request, Reservation $reservation)
     {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $reservationId = $reservation->id;
         $doctorId = $reservation->doctor_id;
         $clientName = $reservation->client->name ?? 'Unknown';
@@ -283,8 +301,21 @@ class ReservationController extends Controller
         return response()->json(['message' => 'Reservation deleted successfully']);
     }
 
-    public function doctors()
+    public function doctors(Request $request)
     {
+        // If assistant, only return their assigned doctor
+        if ($request->user()->role === 'assistant') {
+            $doctorId = $request->user()->doctor_id;
+            $doctors = User::where('id', $doctorId)->where('role', 'doctor')->get(['id', 'name', 'email']);
+            return response()->json($doctors);
+        }
+
+        // If doctor, return only themselves
+        if ($request->user()->role === 'doctor') {
+            $doctors = User::where('id', $request->user()->id)->get(['id', 'name', 'email']);
+            return response()->json($doctors);
+        }
+
         $doctors = User::where('role', 'doctor')->get(['id', 'name', 'email']);
         return response()->json($doctors);
     }
