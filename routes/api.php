@@ -10,6 +10,8 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OpenFdaController;
 use App\Http\Controllers\CheckInController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\RoleController;
+use App\Http\Controllers\PermissionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +28,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Auth routes
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/my-permissions', [AuthController::class, 'myPermissions']);
 
     // Admin routes
     Route::middleware(['role:admin'])->group(function () {
@@ -35,6 +38,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/admin/doctors/{doctor}', [AdminController::class, 'updateDoctor']);
         Route::delete('/admin/doctors/{doctor}', [AdminController::class, 'destroyDoctor']);
         Route::get('/admin/subscription-stats', [AdminController::class, 'subscriptionStats']);
+
+        // Roles & Permissions management
+        Route::apiResource('roles', RoleController::class);
+        Route::get('/permissions', [PermissionController::class, 'index']);
+        Route::post('/permissions', [PermissionController::class, 'store']);
+        Route::delete('/permissions/{permission}', [PermissionController::class, 'destroy']);
+
+        // Assign role to user
+        Route::post('/users/{user}/assign-role', function (Request $request, \App\Models\User $user) {
+            $request->validate(['role' => 'required|string|exists:roles,name']);
+            $user->syncRoles([$request->role]);
+            // Also update the legacy role column
+            $user->update(['role' => $request->role]);
+            return response()->json([
+                'message' => 'Role assigned successfully.',
+                'roles' => $user->getRoleNames(),
+                'permissions' => $user->getAllPermissions()->pluck('name'),
+            ]);
+        });
     });
 
     // Client routes - accessible by doctor and assistant

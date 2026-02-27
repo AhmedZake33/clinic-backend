@@ -46,9 +46,15 @@ class AuthController extends Controller
             $user->load('doctor:id,name,email');
         }
 
+        // Load Spatie permissions
+        $permissions = $user->getAllPermissions()->pluck('name');
+        $roles = $user->getRoleNames();
+
         return response()->json([
             'user' => $user,
             'token' => $token,
+            'permissions' => $permissions,
+            'roles' => $roles,
         ]);
     }
 
@@ -99,15 +105,40 @@ class AuthController extends Controller
 
         $token = $user->createToken('clinic-app')->plainTextToken;
 
+        // Assign Spatie role
+        if ($request->role) {
+            $user->assignRole($request->role);
+        }
+
         // Load doctor relationship for assistants
         if ($user->role === 'assistant') {
             $user->load('doctor:id,name,email');
         }
 
+        // Load Spatie permissions
+        $permissions = $user->getAllPermissions()->pluck('name');
+        $roles = $user->getRoleNames();
+
         return response()->json([
             'user' => $user,
             'token' => $token,
+            'permissions' => $permissions,
+            'roles' => $roles,
         ], 201);
+    }
+
+    /**
+     * Return the current user's Spatie roles & permissions.
+     * Called after login and on every page refresh to stay in sync.
+     */
+    public function myPermissions(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'permissions' => $user->getAllPermissions()->pluck('name'),
+            'roles'       => $user->getRoleNames(),
+        ]);
     }
 
     public function logout(Request $request)
@@ -136,6 +167,14 @@ class AuthController extends Controller
             $user->subscription_status = $user->getSubscriptionStatus();
         }
 
-        return response()->json($user);
+        // Load Spatie permissions
+        $permissions = $user->getAllPermissions()->pluck('name');
+        $roles = $user->getRoleNames();
+
+        return response()->json([
+            'user' => $user,
+            'permissions' => $permissions,
+            'roles' => $roles,
+        ]);
     }
 }

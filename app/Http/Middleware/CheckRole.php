@@ -19,12 +19,22 @@ class CheckRole
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        if (!in_array($request->user()->role, $roles)) {
+        $user = $request->user();
+
+        // Check using Spatie roles first, fallback to legacy role column
+        $hasRole = false;
+        foreach ($roles as $role) {
+            if ($user->hasRole($role) || $user->role === $role) {
+                $hasRole = true;
+                break;
+            }
+        }
+
+        if (!$hasRole) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         // Additional check: ensure doctor's subscription is active
-        $user = $request->user();
         if ($user->role === 'doctor' && $user->isSubscriptionExpired()) {
             return response()->json(['error' => 'Subscription expired. Please contact administrator.'], 403);
         }
