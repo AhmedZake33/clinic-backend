@@ -27,3 +27,20 @@ Broadcast::channel('assistant.reservations', function ($user) {
 Broadcast::channel('reservations', function ($user) {
     return $user !== null;
 });
+
+// Private channel for assistant calls within a clinic
+// clinic_id is the doctor's user ID (tenant owner)
+Broadcast::channel('clinic.{clinicId}.assistant-calls', function ($user, $clinicId) {
+    if ($user->role === 'assistant') {
+        return (int) $user->doctor_id === (int) $clinicId;
+    }
+    if ($user->role === 'doctor') {
+        return (int) $user->id === (int) $clinicId;
+    }
+    return false;
+});
+
+// Private channel for a specific assistant to receive targeted call notifications
+Broadcast::channel('assistant.{assistantId}', function ($user, $assistantId) {
+    return $user->role === 'assistant' && (int) $user->id === (int) $assistantId;
+});

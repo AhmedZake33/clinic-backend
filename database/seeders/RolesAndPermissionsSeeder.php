@@ -36,6 +36,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'assistant.export-reports',
             'assistant.view-waiting-queue',
             'assistant.check-in-patients',
+            'assistant.view-assistant-calls',
+            'assistant.accept-assistant-calls',
 
             // ── Doctor section ──
             'doctor.view-dashboard',
@@ -59,6 +61,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'doctor.delete-assistants',
             'doctor.view-drugs',
             'doctor.generate-prescriptions',
+            'doctor.create-assistant-calls',
+            'doctor.view-assistant-calls',
 
             // ── Admin section ──
             'admin.view-dashboard',
@@ -111,6 +115,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'doctor.delete-assistants',
             'doctor.view-drugs',
             'doctor.generate-prescriptions',
+            'doctor.create-assistant-calls',
+            'doctor.view-assistant-calls',
         ]);
 
         $assistantRole = Role::firstOrCreate(['name' => 'assistant', 'guard_name' => 'web']);
@@ -132,6 +138,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'assistant.export-reports',
             'assistant.view-waiting-queue',
             'assistant.check-in-patients',
+            'assistant.view-assistant-calls',
+            'assistant.accept-assistant-calls',
         ]);
 
         $clientRole = Role::firstOrCreate(['name' => 'client', 'guard_name' => 'web']);

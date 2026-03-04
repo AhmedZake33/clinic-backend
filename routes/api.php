@@ -10,6 +10,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OpenFdaController;
 use App\Http\Controllers\CheckInController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AssistantCallController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
 use Illuminate\Http\Request;
@@ -132,6 +133,20 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/reports/summary', [ReportController::class, 'summary']);
         Route::get('/reports/pdf', [ReportController::class, 'exportPdf']);
+    });
+
+    // Assistant Call routes
+    Route::middleware(['role:doctor'])->group(function () {
+        Route::post('/assistant-calls', [AssistantCallController::class, 'createCall']);
+    });
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/assistant-calls/active', [AssistantCallController::class, 'getActiveCalls']);
+    });
+    Route::middleware(['role:assistant'])->group(function () {
+        Route::post('/assistant-calls/{call}/accept', [AssistantCallController::class, 'acceptCall']);
+    });
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::post('/assistant-calls/{call}/complete', [AssistantCallController::class, 'completeCall']);
     });
 
     // Financial routes
