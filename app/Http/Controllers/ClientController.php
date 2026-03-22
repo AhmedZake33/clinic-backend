@@ -44,9 +44,11 @@ class ClientController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:clients',
+            'email' => 'nullable|email|unique:clients',
             'phone' => 'required|string|max:20',
             'date_of_birth' => 'nullable|date',
+            'height' => 'nullable|numeric|min:0|max:300',
+            'weight' => 'nullable|numeric|min:0|max:500',
             'address' => 'nullable|string',
             'medical_history' => 'nullable|string',
         ]);
@@ -56,6 +58,8 @@ class ClientController extends Controller
             'email' => $request->email,
             'phone' => $request->phone,
             'date_of_birth' => $request->date_of_birth,
+            'height' => $request->height,
+            'weight' => $request->weight,
             'address' => $request->address,
             'medical_history' => $request->medical_history,
             'created_by' => $request->user()->id,
@@ -87,15 +91,17 @@ class ClientController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:clients,email,' . $client->id,
+            'email' => 'nullable|email|unique:clients,email,' . $client->id,
             'phone' => 'required|string|max:20',
             'date_of_birth' => 'nullable|date',
+            'height' => 'nullable|numeric|min:0|max:300',
+            'weight' => 'nullable|numeric|min:0|max:500',
             'address' => 'nullable|string',
             'medical_history' => 'nullable|string',
         ]);
 
         $client->update($request->only([
-            'name', 'email', 'phone', 'date_of_birth', 'address', 'medical_history',
+            'name', 'email', 'phone', 'date_of_birth', 'height', 'weight', 'address', 'medical_history',
         ]));
 
         return response()->json($client);

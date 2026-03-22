@@ -14,6 +14,8 @@ class Client extends Model
         'email',
         'phone',
         'date_of_birth',
+        'height',
+        'weight',
         'address',
         'medical_history',
         'created_by',
