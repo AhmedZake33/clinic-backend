@@ -44,6 +44,8 @@ class AssistantController extends Controller
             'doctor_id' => $doctor->id,
         ]);
 
+        $assistant->assignRole('assistant');
+
         return response()->json($assistant, 201);
     }
 

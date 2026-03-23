@@ -75,6 +75,8 @@ class AdminController extends Controller
             'notes' => $request->notes,
         ]);
 
+        $doctor->assignRole('doctor');
+
         return response()->json([
             'message' => 'Doctor created successfully',
             'doctor' => $doctor
