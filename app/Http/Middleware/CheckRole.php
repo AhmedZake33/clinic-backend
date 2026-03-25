@@ -39,6 +39,14 @@ class CheckRole
             return response()->json(['error' => 'Subscription expired. Please contact administrator.'], 403);
         }
 
+        // Block assistants whose doctor's subscription is expired
+        if ($user->role === 'assistant' && $user->doctor_id) {
+            $doctor = \App\Models\User::find($user->doctor_id);
+            if ($doctor && $doctor->isSubscriptionExpired()) {
+                return response()->json(['error' => 'The doctor\'s subscription has expired. Please contact the administrator.'], 403);
+            }
+        }
+
         return $next($request);
     }
 }

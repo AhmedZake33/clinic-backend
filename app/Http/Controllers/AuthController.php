@@ -39,6 +39,15 @@ class AuthController extends Controller
             ]);
         }
 
+        // Check doctor's subscription status for assistants
+        if ($user->role === 'assistant' && $user->doctor) {
+            if ($user->doctor->isSubscriptionExpired()) {
+                throw ValidationException::withMessages([
+                    'email' => ['The doctor\'s subscription has expired. Please contact the administrator.'],
+                ]);
+            }
+        }
+
         $token = $user->createToken('clinic-app')->plainTextToken;
 
         // Load doctor relationship for assistants
