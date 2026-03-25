@@ -170,4 +170,12 @@ class User extends Authenticatable
 
         return now()->lte($this->subscription_end) ? 'active' : 'expired';
     }
+
+    /**
+     * Notification settings for this doctor.
+     */
+    public function notificationSetting()
+    {
+        return $this->hasOne(DoctorNotificationSetting::class, 'doctor_id');
+    }
 }

@@ -13,6 +13,8 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AssistantCallController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\NotificationSettingsController;
+use App\Http\Controllers\NotificationLogController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Client routes - accessible by doctor and assistant
     Route::middleware(['role:doctor,assistant'])->group(function () {
         Route::apiResource('clients', ClientController::class);
+        Route::get('/clients/{client}/timeline', [ClientController::class, 'timeline']);
     });
 
     // Reservation routes - doctors list (tenant-scoped)
@@ -89,6 +92,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/assistants', [AssistantController::class, 'store']);
         Route::put('/assistants/{assistant}', [AssistantController::class, 'update']);
         Route::delete('/assistants/{assistant}', [AssistantController::class, 'destroy']);
+
+        // Notification settings
+        Route::get('/notification-settings', [NotificationSettingsController::class, 'show']);
+        Route::put('/notification-settings', [NotificationSettingsController::class, 'update']);
+        Route::post('/notification-settings/test-sms', [NotificationSettingsController::class, 'testSms']);
+        Route::post('/notification-settings/test-whatsapp', [NotificationSettingsController::class, 'testWhatsapp']);
+        Route::get('/notification-logs', [NotificationLogController::class, 'index']);
     });
     
     // Assistant can create and confirm reservations

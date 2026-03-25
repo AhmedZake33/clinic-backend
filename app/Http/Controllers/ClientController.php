@@ -118,4 +118,44 @@ class ClientController extends Controller
         $client->delete();
         return response()->json(['message' => 'Client deleted successfully']);
     }
+
+    public function timeline(Request $request, Client $client)
+    {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($client->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $query = $client->reservations()
+            ->with(['doctor:id,name', 'financial:id,reservation_id,amount,paid,remaining,payment_status'])
+            ->orderBy('appointment_date', 'desc');
+
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+        if ($from = $request->query('date_from')) {
+            $query->whereDate('appointment_date', '>=', $from);
+        }
+        if ($to = $request->query('date_to')) {
+            $query->whereDate('appointment_date', '<=', $to);
+        }
+
+        $reservations = $query->get();
+
+        $completed = $reservations->where('status', 'completed')->count();
+
+        return response()->json([
+            'client' => [
+                'id' => $client->id,
+                'name' => $client->name,
+            ],
+            'summary' => [
+                'total_visits' => $reservations->count(),
+                'total_completed' => $completed,
+                'last_visit' => $reservations->first()?->appointment_date,
+            ],
+            'timeline' => $reservations,
+        ]);
+    }
 }
