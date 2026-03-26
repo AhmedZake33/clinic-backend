@@ -322,13 +322,10 @@ class ReservationController extends Controller
 
     public function generatePrescription(Request $request, Reservation $reservation)
     {
-        // Only doctors can generate prescriptions
-        if ($request->user()->role !== 'doctor') {
-            return response()->json(['error' => 'Only doctors can generate prescriptions'], 403);
-        }
+        $doctorId = $this->requireDoctorId($request);
 
-        // Only the assigned doctor can generate prescription
-        if ($reservation->doctor_id !== $request->user()->id) {
+        // Only the assigned doctor (or their assistant) can generate prescription
+        if ($reservation->doctor_id !== $doctorId) {
             return response()->json(['error' => 'You can only generate prescriptions for your own reservations'], 403);
         }
 
@@ -482,7 +479,7 @@ class ReservationController extends Controller
         $pdf->Cell(0, 6, $labels['signature'] . ': Dr. ' . $reservation->doctor->name, 0, 1, $align);
         $pdf->Cell(0, 6, str_repeat('_', 40), 0, 1, $align);
         $pdf->Ln(5);
-        $pdf->SetFont('dejavusans', 'I', 8);
+        $pdf->SetFont('dejavusans', $isArabic ? '' : 'I', 8);
         $pdf->MultiCell(0, 6, $labels['notes'], 0, 'C');
 
         $filePrefix = $isArabic ? 'prescription-ar' : 'prescription-en';

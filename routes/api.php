@@ -100,6 +100,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Doctor can complete reservations
     Route::middleware(['role:doctor'])->group(function () {
         Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete']);
+    });
+
+    // Both doctor and assistant can print prescriptions
+    Route::middleware(['role:doctor,assistant'])->group(function () {
         Route::get('/reservations/{reservation}/prescription', [ReservationController::class, 'generatePrescription']);
     });
 
