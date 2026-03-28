@@ -181,3 +181,5 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::middleware('auth:sanctum')->get('/archive/download/{archive}/{nocache?}', [ArchiveController::class, 'download'])
     ->name('archive.download');
+Route::middleware('auth:sanctum')->get('/archive/preview/{archive}', [ArchiveController::class, 'preview'])
+    ->name('archive.preview');

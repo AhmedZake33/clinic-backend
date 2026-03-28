@@ -90,6 +90,7 @@ class Reservation extends Model
                     'size' => $file->size,
                     'size_text' => $file->sizeText(),
                     'content_type' => $file->content_type,
+                    'application_type' => $file->application_type,
                 ];
             })
             ->all();

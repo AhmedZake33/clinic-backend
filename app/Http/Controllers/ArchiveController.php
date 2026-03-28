@@ -6,6 +6,7 @@ use App\Models\Archive;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ArchiveController extends Controller
 {
@@ -199,6 +200,22 @@ class ArchiveController extends Controller
     public function download(Archive $archive)
     {
         return $archive->downloadResponse();
+    }
+
+    public function preview(Archive $archive)
+    {
+        abort_unless($archive->isFile(), 404, 'Archive item is not a file.');
+        abort_unless(Storage::disk('archive')->exists($archive->diskPath()), 404, 'File not found.');
+
+        $archive->increment('access_count');
+
+        $path = Storage::disk('archive')->path($archive->diskPath());
+        $mime = $archive->application_type ?: mime_content_type($path) ?: 'application/octet-stream';
+
+        return response()->file($path, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="' . $archive->name() . '"',
+        ]);
     }
 
     private function parentPath(Archive $archive): array
