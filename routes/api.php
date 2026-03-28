@@ -13,6 +13,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AssistantCallController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\ArchiveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -62,6 +63,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Client routes - accessible by doctor and assistant
     Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/clients/options', [ClientController::class, 'options']);
         Route::apiResource('clients', ClientController::class);
     });
 
@@ -165,4 +167,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/financials/{financial}', [FinancialController::class, 'update']);
         Route::delete('/financials/{financial}', [FinancialController::class, 'destroy']);
     });
+
+    // Archive / file system routes
+    Route::middleware(['role:admin,doctor,assistant'])->group(function () {
+        Route::post('/archive', [ArchiveController::class, 'archives']);
+        Route::get('/archive/{archive}', [ArchiveController::class, 'show']);
+        Route::put('/archive/{archive?}', [ArchiveController::class, 'put']);
+        Route::delete('/archive/{archive}', [ArchiveController::class, 'destroy']);
+        Route::post('/archive/upload/{archive?}', [ArchiveController::class, 'upload']);
+        Route::post('/archive/update/{archive}', [ArchiveController::class, 'update']);
+    });
 });
+
+Route::middleware('auth:sanctum')->get('/archive/download/{archive}/{nocache?}', [ArchiveController::class, 'download'])
+    ->name('archive.download');

@@ -9,21 +9,30 @@ class Client extends Model
 {
     use HasFactory;
 
+    public static function chronicIllnessOptions(): array
+    {
+        return array_keys(config('client.chronic_illnesses', []));
+    }
+
     protected $fillable = [
         'name',
         'email',
         'phone',
+        'whatsapp_number',
         'date_of_birth',
         'height',
         'weight',
         'address',
+        'job',
         'medical_history',
+        'chronic_illnesses',
         'created_by',
         'doctor_id',
     ];
 
     protected $casts = [
         'date_of_birth' => 'date',
+        'chronic_illnesses' => 'array',
     ];
 
     public function creator()

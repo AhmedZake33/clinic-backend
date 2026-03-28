@@ -5,10 +5,18 @@ namespace App\Http\Controllers;
 use App\Http\Traits\ResolvesDoctor;
 use App\Models\Client;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ClientController extends Controller
 {
     use ResolvesDoctor;
+
+    public function options()
+    {
+        return response()->json([
+            'chronic_illnesses' => Client::chronicIllnessOptions(),
+        ]);
+    }
 
     public function index(Request $request)
     {
@@ -22,7 +30,8 @@ class ClientController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
+                  ->orWhere('phone', 'like', "%{$search}%")
+                  ->orWhere('whatsapp_number', 'like', "%{$search}%");
             });
         }
 
@@ -42,26 +51,10 @@ class ClientController extends Controller
     {
         $doctorId = $this->requireDoctorId($request);
 
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'nullable|email|unique:clients',
-            'phone' => 'required|string|max:20',
-            'date_of_birth' => 'nullable|date',
-            'height' => 'nullable|numeric|min:0|max:300',
-            'weight' => 'nullable|numeric|min:0|max:500',
-            'address' => 'nullable|string',
-            'medical_history' => 'nullable|string',
-        ]);
+        $request->validate($this->clientRules());
 
         $client = Client::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'date_of_birth' => $request->date_of_birth,
-            'height' => $request->height,
-            'weight' => $request->weight,
-            'address' => $request->address,
-            'medical_history' => $request->medical_history,
+            ...$this->clientPayload($request),
             'created_by' => $request->user()->id,
             'doctor_id' => $doctorId,
         ]);
@@ -89,22 +82,55 @@ class ClientController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $request->validate([
+        $request->validate($this->clientRules($client));
+
+        $client->update($this->clientPayload($request));
+
+        return response()->json($client);
+    }
+
+    private function clientRules(?Client $client = null): array
+    {
+        return [
             'name' => 'required|string|max:255',
-            'email' => 'nullable|email|unique:clients,email,' . $client->id,
+            'email' => ['nullable', 'email', Rule::unique('clients', 'email')->ignore($client?->id)],
             'phone' => 'required|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'date_of_birth' => 'nullable|date',
             'height' => 'nullable|numeric|min:0|max:300',
             'weight' => 'nullable|numeric|min:0|max:500',
             'address' => 'nullable|string',
+            'job' => 'nullable|string|max:255',
             'medical_history' => 'nullable|string',
-        ]);
+            'chronic_illnesses' => 'nullable|array',
+            'chronic_illnesses.*' => ['string', Rule::in(Client::chronicIllnessOptions())],
+        ];
+    }
 
-        $client->update($request->only([
-            'name', 'email', 'phone', 'date_of_birth', 'height', 'weight', 'address', 'medical_history',
-        ]));
+    private function clientPayload(Request $request): array
+    {
+        return [
+            'name' => $request->name,
+            'email' => $request->email,
+            'phone' => $request->phone,
+            'whatsapp_number' => $request->whatsapp_number,
+            'date_of_birth' => $request->date_of_birth,
+            'height' => $request->height,
+            'weight' => $request->weight,
+            'address' => $request->address,
+            'job' => $request->job,
+            'medical_history' => $request->medical_history,
+            'chronic_illnesses' => $this->sanitizeChronicIllnesses($request->input('chronic_illnesses')),
+        ];
+    }
 
-        return response()->json($client);
+    private function sanitizeChronicIllnesses($values): array
+    {
+        if (!is_array($values)) {
+            $values = [];
+        }
+
+        return array_values(array_unique(array_filter($values, static fn ($value) => filled($value))));
     }
 
     public function destroy(Request $request, Client $client)

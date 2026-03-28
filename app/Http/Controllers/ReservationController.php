@@ -8,6 +8,7 @@ use App\Events\ReservationCompleted;
 use App\Events\ReservationDeleted;
 use App\Http\Traits\ResolvesDoctor;
 use App\Models\Financial;
+use App\Models\Archive;
 use App\Models\Reservation;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -21,7 +22,7 @@ class ReservationController extends Controller
     {
         $doctorId = $this->requireDoctorId($request);
 
-        $query = Reservation::with(['client', 'doctor', 'creator'])
+        $query = Reservation::with(['client', 'doctor', 'creator', 'archive.children'])
             ->where('doctor_id', $doctorId);
 
         // Optional filters
@@ -162,7 +163,7 @@ class ReservationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $reservation->load(['client', 'doctor', 'creator']);
+        $reservation->load(['client', 'doctor', 'creator', 'archive.children']);
         return response()->json($reservation);
     }
 
@@ -256,6 +257,11 @@ class ReservationController extends Controller
         $request->validate([
             'diagnosis' => 'nullable|string',
             'treatment' => 'nullable|string',
+            'current_procedures' => 'nullable|string',
+            'procedure_notes' => 'nullable|string',
+            'next_procedures' => 'nullable|string',
+            'files' => 'nullable|array',
+            'files.*' => 'file|max:10240',
             'requires_xray' => 'nullable|boolean',
             'xray_notes' => 'nullable|string',
             'requires_lab' => 'nullable|boolean',
@@ -266,6 +272,9 @@ class ReservationController extends Controller
             'status' => 'completed',
             'diagnosis' => $request->diagnosis,
             'treatment' => $request->treatment,
+            'current_procedures' => $request->current_procedures,
+            'procedure_notes' => $request->procedure_notes,
+            'next_procedures' => $request->next_procedures,
             'requires_xray' => $request->boolean('requires_xray'),
             'xray_notes' => $request->requires_xray ? $request->xray_notes : null,
             'requires_lab' => $request->boolean('requires_lab'),
@@ -273,12 +282,72 @@ class ReservationController extends Controller
             'completed_at' => now(),
         ]);
 
-        $reservation->load(['client', 'doctor', 'creator']);
+        if ($request->hasFile('files')) {
+            $archiveFolder = $this->ensureReservationArchiveFolder($reservation);
+
+            foreach ($request->file('files') as $file) {
+                Archive::createFile($archiveFolder, $file, [
+                    'content_type' => 'reservation_completion_file',
+                    'language' => app()->getLocale(),
+                ]);
+            }
+        }
+
+        $reservation->load(['client', 'doctor', 'creator', 'archive.children']);
 
         // Broadcast event for real-time updates (exclude the sender)
         broadcast(new ReservationCompleted($reservation))->toOthers();
 
         return response()->json($reservation);
+    }
+
+    private function ensureReservationArchiveFolder(Reservation $reservation): Archive
+    {
+        if ($reservation->archive_id) {
+            $archive = Archive::with('children')->find($reservation->archive_id);
+            if ($archive) {
+                return $archive;
+            }
+        }
+
+        $rootFolder = Archive::query()
+            ->where('parent_id', 0)
+            ->where('type', Archive::TYPE_FOLDER)
+            ->where('title', 'reservations')
+            ->first();
+
+        if (!$rootFolder) {
+            $rootFolder = Archive::createFolder(Archive::root(), [
+                'title' => 'reservations',
+                'short_name' => 'reservations',
+                'content_type' => 'reservations',
+                'language' => app()->getLocale(),
+            ]);
+        }
+
+        $folderTitle = 'reservation-' . $reservation->id;
+
+        $reservationFolder = Archive::query()
+            ->where('parent_id', $rootFolder->id)
+            ->where('type', Archive::TYPE_FOLDER)
+            ->where('title', $folderTitle)
+            ->first();
+
+        if (!$reservationFolder) {
+            $reservationFolder = Archive::createFolder($rootFolder, [
+                'title' => $folderTitle,
+                'short_name' => $folderTitle,
+                'content_type' => 'reservation_files',
+                'language' => app()->getLocale(),
+            ]);
+        }
+
+        if ($reservation->archive_id !== $reservationFolder->id) {
+            $reservation->archive_id = $reservationFolder->id;
+            $reservation->save();
+        }
+
+        return $reservationFolder->load('children');
     }
 
     public function destroy(Request $request, Reservation $reservation)
@@ -348,17 +417,28 @@ class ReservationController extends Controller
                 'name' => 'الاسم',
                 'email' => 'البريد الإلكتروني',
                 'phone' => 'الهاتف',
+                'whatsapp' => 'واتساب',
                 'dob' => 'تاريخ الميلاد',
+                'address' => 'العنوان',
+                'job' => 'الوظيفة',
+                'chronicIllnesses' => 'الأمراض المزمنة',
                 'doctorInfo' => 'معلومات الطبيب',
                 'doctor' => 'الطبيب',
                 'date' => 'التاريخ',
                 'diagnosis' => 'التشخيص',
                 'treatment' => 'خطة العلاج',
+                'currentProcedures' => 'الإجراءات الحالية',
+                'procedureNotes' => 'ملاحظات الإجراءات',
+                'nextProcedures' => 'الإجراءات القادمة',
                 'medicalHistory' => 'التاريخ المرضي',
                 'signature' => 'التوقيع الرقمي',
                 'notes' => 'هذه وصفة طبية مولدة رقمياً. يرجى استشارة طبيبك لأي أسئلة أو مخاوف.',
                 'noDiagnosis' => 'لم يتم تقديم تشخيص.',
                 'noTreatment' => 'لم يتم تقديم خطة علاج.',
+                'noCurrentProcedures' => 'لم يتم تسجيل إجراءات حالية.',
+                'noProcedureNotes' => 'لا توجد ملاحظات إجراءات.',
+                'noNextProcedures' => 'لم يتم تسجيل إجراءات قادمة.',
+                'noChronicIllnesses' => 'لا توجد أمراض مزمنة مسجلة.',
                 'xrayRequired' => 'يتطلب أشعة سينية',
                 'labRequired' => 'يتطلب تحاليل مختبرية',
                 'xrayNotes' => 'ملاحظات الأشعة',
@@ -371,17 +451,28 @@ class ReservationController extends Controller
                 'name' => 'Name',
                 'email' => 'Email',
                 'phone' => 'Phone',
+                'whatsapp' => 'WhatsApp',
                 'dob' => 'DOB',
+                'address' => 'Address',
+                'job' => 'Job',
+                'chronicIllnesses' => 'Chronic Illnesses',
                 'doctorInfo' => 'Doctor Information',
                 'doctor' => 'Doctor',
                 'date' => 'Date',
                 'diagnosis' => 'Diagnosis',
                 'treatment' => 'Treatment Plan',
+                'currentProcedures' => 'Current Procedures',
+                'procedureNotes' => 'Procedure Notes',
+                'nextProcedures' => 'Next Procedures',
                 'medicalHistory' => 'Medical History',
                 'signature' => 'Digital Signature',
                 'notes' => 'This is a digitally generated prescription. Please consult your doctor for any questions or concerns.',
                 'noDiagnosis' => 'No diagnosis provided.',
                 'noTreatment' => 'No treatment plan provided.',
+                'noCurrentProcedures' => 'No current procedures recorded.',
+                'noProcedureNotes' => 'No procedure notes provided.',
+                'noNextProcedures' => 'No next procedures recorded.',
+                'noChronicIllnesses' => 'No chronic illnesses recorded.',
                 'xrayRequired' => 'Requires X-Ray',
                 'labRequired' => 'Requires Lab Tests',
                 'xrayNotes' => 'X-Ray Notes',
@@ -421,9 +512,25 @@ class ReservationController extends Controller
         $pdf->Cell(0, 6, $reservation->client->email, 0, 1, $align);
         $pdf->Cell(50, 6, $labels['phone'] . ':', 0, 0, $align);
         $pdf->Cell(0, 6, $reservation->client->phone, 0, 1, $align);
+        if ($reservation->client->whatsapp_number) {
+            $pdf->Cell(50, 6, $labels['whatsapp'] . ':', 0, 0, $align);
+            $pdf->Cell(0, 6, $reservation->client->whatsapp_number, 0, 1, $align);
+        }
         if ($reservation->client->date_of_birth) {
             $pdf->Cell(50, 6, $labels['dob'] . ':', 0, 0, $align);
             $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), 0, 1, $align);
+        }
+        if ($reservation->client->address) {
+            $pdf->Cell(50, 6, $labels['address'] . ':', 0, 0, $align);
+            $pdf->MultiCell(0, 6, $reservation->client->address, 0, $align);
+        }
+        if ($reservation->client->job) {
+            $pdf->Cell(50, 6, $labels['job'] . ':', 0, 0, $align);
+            $pdf->Cell(0, 6, $reservation->client->job, 0, 1, $align);
+        }
+        if (!empty($reservation->client->chronic_illnesses)) {
+            $pdf->Cell(50, 6, $labels['chronicIllnesses'] . ':', 0, 0, $align);
+            $pdf->MultiCell(0, 6, $this->formatChronicIllnesses($reservation->client->chronic_illnesses, $isArabic), 0, $align);
         }
 
         $pdf->Ln(4);
@@ -446,6 +553,24 @@ class ReservationController extends Controller
         $pdf->Cell(0, 8, $labels['treatment'], 0, 1, $align, 1);
         $pdf->SetFont('dejavusans', '', 10);
         $pdf->MultiCell(0, 6, $reservation->treatment ?: $labels['noTreatment'], 1, $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['currentProcedures'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->MultiCell(0, 6, $reservation->current_procedures ?: $labels['noCurrentProcedures'], 1, $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['procedureNotes'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->MultiCell(0, 6, $reservation->procedure_notes ?: $labels['noProcedureNotes'], 1, $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['nextProcedures'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->MultiCell(0, 6, $reservation->next_procedures ?: $labels['noNextProcedures'], 1, $align);
 
         if ($reservation->requires_xray || $reservation->requires_lab) {
             $pdf->Ln(4);
@@ -488,5 +613,21 @@ class ReservationController extends Controller
         return response($pdf->Output($fileName, 'S'))
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function formatChronicIllnesses(array $illnesses, bool $isArabic): string
+    {
+        $options = config('client.chronic_illnesses', []);
+        $labels = array_map(function ($illness) use ($options, $isArabic) {
+            $option = $options[$illness] ?? null;
+
+            if (is_array($option)) {
+                return $option[$isArabic ? 'ar' : 'en'] ?? ucwords(str_replace('_', ' ', $illness));
+            }
+
+            return ucwords(str_replace('_', ' ', $illness));
+        }, $illnesses);
+
+        return implode($isArabic ? '، ' : ', ', $labels);
     }
 }
