@@ -14,6 +14,11 @@ class Client extends Model
         return array_keys(config('client.chronic_illnesses', []));
     }
 
+    public static function bloodTypeOptions(): array
+    {
+        return ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    }
+
     protected $fillable = [
         'name',
         'email',
@@ -24,6 +29,7 @@ class Client extends Model
         'weight',
         'address',
         'job',
+        'blood_type',
         'medical_history',
         'chronic_illnesses',
         'created_by',

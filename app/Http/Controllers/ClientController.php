@@ -104,6 +104,7 @@ class ClientController extends Controller
             'medical_history' => 'nullable|string',
             'chronic_illnesses' => 'nullable|array',
             'chronic_illnesses.*' => ['string', Rule::in(Client::chronicIllnessOptions())],
+            'blood_type' => ['nullable', Rule::in(Client::bloodTypeOptions())],
         ];
     }
 
@@ -119,6 +120,7 @@ class ClientController extends Controller
             'weight' => $request->weight,
             'address' => $request->address,
             'job' => $request->job,
+            'blood_type' => $request->blood_type,
             'medical_history' => $request->medical_history,
             'chronic_illnesses' => $this->sanitizeChronicIllnesses($request->input('chronic_illnesses')),
         ];
