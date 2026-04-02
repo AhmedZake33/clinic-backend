@@ -39,17 +39,26 @@ class CheckInController extends Controller
         $today = Carbon::today()->toDateString();
         $doctorId = $reservation->doctor_id;
 
-        // Get next waiting number for this doctor today
+        // Get next waiting number and position for this doctor today
         $maxNumber = Reservation::where('doctor_id', $doctorId)
             ->whereDate('appointment_date', $today)
             ->whereNotNull('checked_in_at')
+            ->where('status', '!=', 'completed')
             ->max('waiting_number');
 
+        $maxPosition = Reservation::where('doctor_id', $doctorId)
+            ->whereDate('appointment_date', $today)
+            ->whereNotNull('checked_in_at')
+            ->where('status', '!=', 'completed')
+            ->max('position');
+
         $waitingNumber = ($maxNumber ?? 0) + 1;
+        $position = ($maxPosition ?? 0) + 1;
 
         $reservation->update([
             'checked_in_at' => now(),
             'waiting_number' => $waitingNumber,
+            'position' => $position,
             'status' => $reservation->status === 'pending' ? 'confirmed' : $reservation->status,
         ]);
 
@@ -208,7 +217,10 @@ class CheckInController extends Controller
                 DB::table('reservations')
                     ->where('id', $id)
                     ->where('doctor_id', $doctorId)
-                    ->update(['position' => $index + 1]);
+                    ->update([
+                        'position' => $index + 1,
+                        'waiting_number' => $index + 1,
+                    ]);
             }
         });
 
