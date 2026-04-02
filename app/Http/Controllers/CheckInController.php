@@ -109,7 +109,10 @@ class CheckInController extends Controller
             ->where('doctor_id', $doctorId);
 
         // Order: non-completed first by waiting number, then completed at bottom
+        // Prefer explicit `position` when present, otherwise fall back to `waiting_number`.
         $queue = $query->orderByRaw("CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC")
+            ->orderByRaw("CASE WHEN position IS NULL THEN 1 ELSE 0 END ASC")
+            ->orderBy('position', 'asc')
             ->orderBy('waiting_number', 'asc')
             ->get();
 
@@ -184,6 +187,35 @@ class CheckInController extends Controller
             'summary' => $summary,
             'date' => $date,
         ]);
+    }
+
+    /**
+     * Reorder the waiting queue. Accepts an array `ordered_ids` with reservation ids in the desired order.
+     */
+    public function reorderWaitingQueue(Request $request)
+    {
+        $doctorId = $this->requireDoctorId($request);
+
+        $data = $request->validate([
+            'ordered_ids' => 'required|array',
+            'ordered_ids.*' => 'integer|exists:reservations,id',
+        ]);
+
+        $orderedIds = $data['ordered_ids'];
+
+        DB::transaction(function () use ($orderedIds, $doctorId) {
+            foreach ($orderedIds as $index => $id) {
+                DB::table('reservations')
+                    ->where('id', $id)
+                    ->where('doctor_id', $doctorId)
+                    ->update(['position' => $index + 1]);
+            }
+        });
+
+        // Broadcast a queue.reordered event so other clients refresh
+        event(new \App\Events\QueueReordered($doctorId, $orderedIds));
+
+        return response()->json(['message' => 'Queue reordered successfully']);
     }
 
     /**

@@ -128,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware(['role:doctor,assistant'])->group(function () {
         Route::get('/waiting-queue', [CheckInController::class, 'waitingQueue']);
+        Route::post('/waiting-queue/reorder', [CheckInController::class, 'reorderWaitingQueue']);
         Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary']);
     });
 
