@@ -119,7 +119,8 @@ class CheckInController extends Controller
         $query = Reservation::with(['client', 'doctor'])
             ->whereDate('appointment_date', $date)
             ->whereNotNull('checked_in_at')
-            ->where('doctor_id', $doctorId);
+            ->where('doctor_id', $doctorId)
+            ->where('status', '!=', 'cancelled');
 
         // Order: non-completed first by waiting number, then completed at bottom
         // Prefer explicit `position` when present, otherwise fall back to `waiting_number`.
@@ -184,6 +185,7 @@ class CheckInController extends Controller
             ->join('users', 'reservations.doctor_id', '=', 'users.id')
             ->whereDate('reservations.appointment_date', $date)
             ->whereNotNull('reservations.checked_in_at')
+            ->where('reservations.status', '!=', 'cancelled')
             ->where('reservations.doctor_id', $doctorId)
             ->select(
                 'reservations.doctor_id',
