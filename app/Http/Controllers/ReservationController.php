@@ -76,6 +76,9 @@ class ReservationController extends Controller
 
         // Validate appointment against doctor's schedule and holidays
         $appointment = \Carbon\Carbon::parse($request->appointment_date);
+        if ($appointment->toDateString() < \Carbon\Carbon::today()->toDateString()) {
+            return response()->json(['error' => 'Reservations can only be created for today or future dates'], 422);
+        }
         $dayOfWeek = (int) $appointment->dayOfWeek; // 0 (Sunday) to 6 (Saturday)
 
         // Check holidays (specific date or recurring weekday)
@@ -202,6 +205,11 @@ class ReservationController extends Controller
             'requires_lab' => 'nullable|boolean',
             'lab_notes' => 'nullable|string',
         ]);
+
+        $appointment = \Carbon\Carbon::parse($request->appointment_date);
+        if ($appointment->toDateString() < \Carbon\Carbon::today()->toDateString()) {
+            return response()->json(['error' => 'Reservations can only be scheduled for today or future dates'], 422);
+        }
 
         $newStatus = $request->status;
         $currentStatus = $reservation->status;

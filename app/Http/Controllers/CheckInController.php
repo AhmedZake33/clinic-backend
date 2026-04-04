@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ReservationUpdated;
 use App\Http\Traits\ResolvesDoctor;
+use App\Models\DoctorAvailability;
 use App\Models\Reservation;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -63,6 +65,7 @@ class CheckInController extends Controller
         ]);
 
         $reservation->load(['client', 'doctor', 'creator']);
+        broadcast(new ReservationUpdated($reservation))->toOthers();
 
         return response()->json([
             'message' => 'Patient checked in successfully',
@@ -96,6 +99,7 @@ class CheckInController extends Controller
         ]);
 
         $reservation->load(['client', 'doctor', 'creator']);
+        broadcast(new ReservationUpdated($reservation))->toOthers();
 
         return response()->json([
             'message' => 'Check-in undone successfully',
@@ -235,6 +239,8 @@ class CheckInController extends Controller
      */
     private function getAverageConsultationTime(?int $doctorId): int
     {
+        return DoctorAvailability::where('user_id', $doctorId)
+            ->select("slot_duration_minutes")->first()?->slot_duration_minutes ?? 15;
         $query = Reservation::whereNotNull('checked_in_at')
             ->whereNotNull('completed_at')
             ->where('status', 'completed');
