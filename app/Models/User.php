@@ -93,6 +93,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Purchases created/assigned to this doctor.
+     */
+    public function purchases()
+    {
+        return $this->hasMany(\App\Models\Purchase::class, 'doctor_id');
+    }
+
+    /**
      * Check if user is admin.
      */
     public function isAdmin()

@@ -14,6 +14,7 @@ use App\Http\Controllers\AssistantCallController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ArchiveController;
+use App\Http\Controllers\PurchaseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -161,12 +162,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/financials', [FinancialController::class, 'index']);
         Route::get('/financials/summary', [FinancialController::class, 'summary']);
         Route::get('/financials/{financial}', [FinancialController::class, 'show']);
+        // Purchases (view)
+            Route::get('/purchases', [PurchaseController::class, 'index']);
+            Route::get('/purchases/categories', [PurchaseController::class, 'categories']);
+        // unified stats endpoint (accepts GET and POST payloads)
+        Route::get('/purchases/stats', [PurchaseController::class, 'stats']);
+        Route::post('/purchases/stats', [PurchaseController::class, 'stats']);
+        Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
     });
 
     Route::middleware(['role:assistant'])->group(function () {
         Route::post('/financials', [FinancialController::class, 'store']);
         Route::put('/financials/{financial}', [FinancialController::class, 'update']);
         Route::delete('/financials/{financial}', [FinancialController::class, 'destroy']);
+        // Purchases (create/update/delete)
+        Route::post('/purchases', [PurchaseController::class, 'store']);
+        Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
+        Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
     });
 
     // Archive / file system routes
