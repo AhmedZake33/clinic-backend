@@ -15,6 +15,8 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\PurchaseController;
+use App\Http\Controllers\SpecializationController;
+use App\Http\Controllers\FeatureController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -33,6 +35,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/my-permissions', [AuthController::class, 'myPermissions']);
 
+    // Specializations list — accessible by all authenticated users
+    Route::get('/specializations', [SpecializationController::class, 'index']);
+
+    // Features list — accessible by all authenticated users
+    Route::get('/features', [FeatureController::class, 'index']);
+
     // Admin routes
     Route::middleware(['role:admin'])->group(function () {
         Route::get('/admin/doctors', [AdminController::class, 'indexDoctors']);
@@ -41,6 +49,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/admin/doctors/{doctor}', [AdminController::class, 'updateDoctor']);
         Route::delete('/admin/doctors/{doctor}', [AdminController::class, 'destroyDoctor']);
         Route::get('/admin/subscription-stats', [AdminController::class, 'subscriptionStats']);
+
+        // Specializations management (admin only)
+        Route::apiResource('specializations', SpecializationController::class)->except(['index']);
 
         // Roles & Permissions management
         Route::apiResource('roles', RoleController::class);

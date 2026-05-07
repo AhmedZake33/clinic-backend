@@ -55,6 +55,11 @@ class AuthController extends Controller
             $user->load('doctor:id,name,email');
         }
 
+        // Load specialization for doctors
+        if ($user->role === 'doctor') {
+            $user->load('specialization');
+        }
+
         // Load Spatie permissions
         $permissions = $user->getAllPermissions()->pluck('name');
         $roles = $user->getRoleNames();
@@ -164,6 +169,11 @@ class AuthController extends Controller
         // Load doctor relationship for assistants
         if ($user->role === 'assistant') {
             $user->load('doctor:id,name,email');
+        }
+
+        // Load specialization for doctors
+        if ($user->role === 'doctor') {
+            $user->load('specialization');
         }
 
         // Load assistant count for doctors

@@ -16,6 +16,7 @@ class AdminController extends Controller
     public function indexDoctors()
     {
         $doctors = User::where('role', 'doctor')
+            ->with('specialization')
             ->withCount('assistants', 'clients', 'reservations')
             ->orderBy('created_at', 'desc')
             ->get()
@@ -24,6 +25,8 @@ class AdminController extends Controller
                     'id' => $doctor->id,
                     'name' => $doctor->name,
                     'email' => $doctor->email,
+                    'specialization_id' => $doctor->specialization_id,
+                    'specialization' => $doctor->specialization,
                     'subscription_start' => $doctor->subscription_start,
                     'subscription_end' => $doctor->subscription_end,
                     'is_active' => $doctor->is_active,
@@ -50,6 +53,7 @@ class AdminController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
+            'specialization_id' => 'nullable|exists:specializations,id',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
             'is_active' => 'boolean',
@@ -67,6 +71,7 @@ class AdminController extends Controller
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'role' => 'doctor',
+            'specialization_id' => $request->specialization_id,
             'subscription_start' => $request->subscription_start,
             'subscription_end' => $request->subscription_end,
             'is_active' => $request->is_active ?? true,
@@ -93,12 +98,14 @@ class AdminController extends Controller
             return response()->json(['error' => 'User is not a doctor'], 404);
         }
 
-        $doctor->load(['assistants', 'clients', 'reservations']);
+        $doctor->load(['assistants', 'clients', 'reservations', 'specialization']);
 
         return response()->json([
             'id' => $doctor->id,
             'name' => $doctor->name,
             'email' => $doctor->email,
+            'specialization_id' => $doctor->specialization_id,
+            'specialization' => $doctor->specialization,
             'subscription_start' => $doctor->subscription_start,
             'subscription_end' => $doctor->subscription_end,
             'is_active' => $doctor->is_active,
@@ -137,6 +144,7 @@ class AdminController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'email' => ['sometimes', 'required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($doctor->id)],
             'password' => 'nullable|string|min:8',
+            'specialization_id' => 'nullable|exists:specializations,id',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
             'is_active' => 'boolean',
@@ -150,7 +158,7 @@ class AdminController extends Controller
         }
 
         $updateData = $request->only([
-            'name', 'email', 'subscription_start', 'subscription_end',
+            'name', 'email', 'specialization_id', 'subscription_start', 'subscription_end',
             'is_active', 'subscription_plan', 'subscription_amount', 'notes'
         ]);
 

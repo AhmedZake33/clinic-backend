@@ -25,6 +25,7 @@ class User extends Authenticatable
         'password',
         'role',
         'doctor_id',
+        'specialization_id',
         'subscription_start',
         'subscription_end',
         'is_active',
@@ -66,6 +67,14 @@ class User extends Authenticatable
     public function doctor()
     {
         return $this->belongsTo(User::class, 'doctor_id');
+    }
+
+    /**
+     * The specialization assigned to this doctor.
+     */
+    public function specialization()
+    {
+        return $this->belongsTo(Specialization::class, 'specialization_id');
     }
 
     /**
