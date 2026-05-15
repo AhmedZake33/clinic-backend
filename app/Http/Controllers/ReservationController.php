@@ -8,10 +8,12 @@ use App\Events\ReservationCompleted;
 use App\Events\ReservationDeleted;
 use App\Http\Traits\ResolvesDoctor;
 use App\Models\Financial;
+use App\Models\Transaction;
 use App\Models\Archive;
 use App\Models\Reservation;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use TCPDF;
 
 class ReservationController extends Controller
@@ -20,10 +22,10 @@ class ReservationController extends Controller
 
     public function index(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
         $query = Reservation::with(['client', 'doctor', 'creator', 'archive.children'])
-            ->where('doctor_id', $doctorId);
+            ->whereIn('doctor_id', $doctorIds);
 
         // Optional filters
         if ($status = $request->query('status')) {
@@ -52,7 +54,13 @@ class ReservationController extends Controller
 
     public function store(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $callerDoctorIds = $this->getDoctorIds($request);
+        $doctorId = (int) $request->doctor_id;
+
+        // Ensure caller is authorized to book for this doctor / sub-doctor
+        if (!in_array($doctorId, $callerDoctorIds)) {
+            return response()->json(['error' => 'You are not authorized to book for this doctor'], 403);
+        }
 
         $request->validate([
             'client_id' => 'required|exists:clients,id',
@@ -63,12 +71,16 @@ class ReservationController extends Controller
             'payment_method' => 'required|in:cash,card,transfer,other',
         ]);
 
-        // Use the tenant doctor
-        $doctor = User::where('id', $doctorId)->where('role', 'doctor')->firstOrFail();
+        // Use the tenant doctor (doctor or sub-doctor)
+        $doctor = User::where('id', $doctorId)->whereIn('role', ['doctor', 'sub-doctor'])->firstOrFail();
 
-        // Verify client belongs to this doctor
+        // Verify client belongs to this doctor or, for sub-doctors, to their parent doctor
+        $allowedDoctorIds = [$doctorId];
+        if ($doctor->role === 'sub-doctor' && $doctor->parent_doctor_id) {
+            $allowedDoctorIds[] = $doctor->parent_doctor_id;
+        }
         $client = \App\Models\Client::where('id', $request->client_id)
-            ->where('doctor_id', $doctorId)
+            ->whereIn('doctor_id', $allowedDoctorIds)
             ->first();
         if (!$client) {
             return response()->json(['error' => 'Client does not belong to this doctor'], 422);
@@ -103,8 +115,8 @@ class ReservationController extends Controller
             return response()->json(['error' => 'Selected time is outside doctor availability'], 422);
         }
 
-        // Prevent double booking at exact same timestamp
-        $conflict = Reservation::where('doctor_id', $doctor->id)
+        // Prevent double booking at exact same timestamp (across the whole schedule owner's pool)
+        $conflict = Reservation::where('doctor_id', $doctorId)
             ->where('appointment_date', $appointment)
             ->exists();
         if ($conflict) {
@@ -122,24 +134,37 @@ class ReservationController extends Controller
 
         $reservation->load(['client', 'doctor', 'creator']);
 
-        // Create financial record for this reservation
+        // Create financial record and optionally an initial transaction
         $amount = $request->amount;
         $paid = $request->paid ?? 0;
         $remaining = $amount - $paid;
         $paymentStatus = $paid <= 0 ? 'unpaid' : ($paid >= $amount ? 'paid' : 'partial');
 
-        Financial::create([
-            'reservation_id' => $reservation->id,
-            'client_id' => $request->client_id,
-            'doctor_id' => $doctorId,
-            'created_by' => $request->user()->id,
-            'amount' => $amount,
-            'paid' => $paid,
-            'remaining' => $remaining,
-            'payment_status' => $paymentStatus,
-            'payment_method' => $request->payment_method,
-            'notes' => null,
-        ]);
+        DB::transaction(function () use ($request, $reservation, $doctorId, $amount, $paid, $remaining, $paymentStatus) {
+            $financial = Financial::create([
+                'reservation_id' => $reservation->id,
+                'client_id'      => $request->client_id,
+                'doctor_id'      => $doctorId,
+                'created_by'     => $request->user()->id,
+                'amount'         => $amount,
+                'paid'           => $paid,
+                'remaining'      => $remaining,
+                'payment_status' => $paymentStatus,
+                'payment_method' => $request->payment_method,
+                'notes'          => null,
+            ]);
+
+            if ($paid > 0) {
+                Transaction::create([
+                    'financial_id'   => $financial->id,
+                    'doctor_id'      => $doctorId,
+                    'created_by'     => $request->user()->id,
+                    'amount'         => $paid,
+                    'payment_method' => $request->payment_method,
+                    'notes'          => null,
+                ]);
+            }
+        });
 
         // Count how many reservations are before this one on the same day for the same doctor
         $queuePosition = Reservation::where('doctor_id', $reservation->doctor_id)
@@ -160,9 +185,9 @@ class ReservationController extends Controller
 
     public function show(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -186,9 +211,9 @@ class ReservationController extends Controller
 
     public function update(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -252,13 +277,18 @@ class ReservationController extends Controller
 
     public function complete(Request $request, Reservation $reservation)
     {
-        // Only doctors can complete reservations
-        if ($request->user()->role !== 'doctor') {
+        $user = $request->user();
+
+        // Only doctors and sub-doctors can complete reservations
+        if (!in_array($user->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'Only doctors can complete reservations'], 403);
         }
 
-        // Only the assigned doctor can complete
-        if ($reservation->doctor_id !== $request->user()->id) {
+        // Resolve the owning doctor ID for this user
+        $doctorId = $this->requireDoctorId($request);
+
+        // Only the assigned doctor (or their sub-doctor) can complete
+        if ($reservation->doctor_id !== $doctorId) {
             return response()->json(['error' => 'You can only complete your own reservations'], 403);
         }
 
@@ -360,9 +390,9 @@ class ReservationController extends Controller
 
     public function destroy(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -380,15 +410,30 @@ class ReservationController extends Controller
 
     public function doctors(Request $request)
     {
-        // If assistant, only return their assigned doctor
-        if ($request->user()->role === 'assistant') {
+        $role = $request->user()->role;
+
+        // If assistant, return their assigned doctor + that doctor's sub-doctors
+        if ($role === 'assistant') {
             $doctorId = $request->user()->doctor_id;
+            $doctors = User::where(function ($q) use ($doctorId) {
+                $q->where('id', $doctorId)
+                  ->orWhere(function ($q2) use ($doctorId) {
+                      $q2->where('role', 'sub-doctor')
+                         ->where('parent_doctor_id', $doctorId);
+                  });
+            })->get(['id', 'name', 'email', 'role']);
+            return response()->json($doctors);
+        }
+
+        // If sub-doctor, return only their parent doctor
+        if ($role === 'sub-doctor') {
+            $doctorId = $request->user()->parent_doctor_id;
             $doctors = User::where('id', $doctorId)->where('role', 'doctor')->get(['id', 'name', 'email']);
             return response()->json($doctors);
         }
 
         // If doctor, return only themselves
-        if ($request->user()->role === 'doctor') {
+        if ($role === 'doctor') {
             $doctors = User::where('id', $request->user()->id)->get(['id', 'name', 'email']);
             return response()->json($doctors);
         }

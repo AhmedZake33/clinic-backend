@@ -20,9 +20,9 @@ class CheckInController extends Controller
      */
     public function checkIn(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         if ($reservation->checked_in_at) {
@@ -79,9 +79,9 @@ class CheckInController extends Controller
      */
     public function undoCheckIn(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -113,13 +113,13 @@ class CheckInController extends Controller
      */
     public function waitingQueue(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
         $date = $request->query('date', Carbon::today()->toDateString());
 
         $query = Reservation::with(['client', 'doctor'])
             ->whereDate('appointment_date', $date)
             ->whereNotNull('checked_in_at')
-            ->where('doctor_id', $doctorId)
+            ->whereIn('doctor_id', $doctorIds)
             ->where('status', '!=', 'cancelled');
 
         // Order: non-completed first by waiting number, then completed at bottom
@@ -131,7 +131,9 @@ class CheckInController extends Controller
             ->get();
 
         // Calculate estimated wait times
-        $avgMinutes = $this->getAverageConsultationTime($doctorId);
+        // Use the first/primary doctor id for avg consultation time
+        $primaryDoctorId = $doctorIds[0];
+        $avgMinutes = $this->getAverageConsultationTime($primaryDoctorId);
         $currentlyServing = null;
         $waitingItems = [];
 
@@ -178,7 +180,7 @@ class CheckInController extends Controller
      */
     public function queueSummary(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
         $date = $request->query('date', Carbon::today()->toDateString());
 
         $summary = DB::table('reservations')
@@ -186,7 +188,7 @@ class CheckInController extends Controller
             ->whereDate('reservations.appointment_date', $date)
             ->whereNotNull('reservations.checked_in_at')
             ->where('reservations.status', '!=', 'cancelled')
-            ->where('reservations.doctor_id', $doctorId)
+            ->whereIn('reservations.doctor_id', $doctorIds)
             ->select(
                 'reservations.doctor_id',
                 'users.name as doctor_name',
@@ -209,7 +211,7 @@ class CheckInController extends Controller
      */
     public function reorderWaitingQueue(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
         $data = $request->validate([
             'ordered_ids' => 'required|array',
@@ -218,11 +220,11 @@ class CheckInController extends Controller
 
         $orderedIds = $data['ordered_ids'];
 
-        DB::transaction(function () use ($orderedIds, $doctorId) {
+        DB::transaction(function () use ($orderedIds, $doctorIds) {
             foreach ($orderedIds as $index => $id) {
                 DB::table('reservations')
                     ->where('id', $id)
-                    ->where('doctor_id', $doctorId)
+                    ->whereIn('doctor_id', $doctorIds)
                     ->update([
                         'position' => $index + 1,
                         'waiting_number' => $index + 1,
@@ -231,7 +233,8 @@ class CheckInController extends Controller
         });
 
         // Broadcast a queue.reordered event so other clients refresh
-        event(new \App\Events\QueueReordered($doctorId, $orderedIds));
+        $primaryDoctorId = $doctorIds[0];
+        event(new \App\Events\QueueReordered($primaryDoctorId, $orderedIds));
 
         return response()->json(['message' => 'Queue reordered successfully']);
     }

@@ -65,4 +65,15 @@ class PermissionController extends Controller
 
         return response()->json(['message' => 'Permission deleted successfully.']);
     }
+
+    /**
+     * Return doctor-scoped permissions (doctor.*)
+     */
+    public function doctorPermissions()
+    {
+        $perms = Permission::where('name', 'like', 'doctor.%')->get()->map(function ($p) {
+            return ['id' => $p->id, 'name' => $p->name];
+        });
+        return response()->json($perms);
+    }
 }

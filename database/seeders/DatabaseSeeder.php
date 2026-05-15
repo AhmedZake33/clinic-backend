@@ -19,6 +19,9 @@ class DatabaseSeeder extends Seeder
         // Seed admin and sample doctor
         $this->call(AdminUserSeeder::class);
 
+        // Ensure sub-doctor role exists
+        $this->call(\Database\Seeders\CreateSubDoctorRoleSeeder::class);
+
         // Create an assistant (will be assigned to doctor later)
         User::create([
             'name' => 'Sarah Johnson',

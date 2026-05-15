@@ -15,6 +15,7 @@ class AdminController extends Controller
      */
     public function indexDoctors()
     {
+        abort_unless(auth()->user()->hasRole('admin'), 401, 'Unauthorized');
         $doctors = User::where('role', 'doctor')
             ->withCount('assistants', 'clients', 'reservations')
             ->orderBy('created_at', 'desc')
@@ -34,6 +35,8 @@ class AdminController extends Controller
                     'clients_count' => $doctor->clients_count,
                     'reservations_count' => $doctor->reservations_count,
                     'notes' => $doctor->notes,
+                    'max_sub_doctors' => $doctor->max_sub_doctors ?? 0,
+                    'sub_doctors_count' => $doctor->subDoctors()->count(),
                     'created_at' => $doctor->created_at,
                 ];
             });
@@ -46,7 +49,7 @@ class AdminController extends Controller
      */
     public function storeDoctor(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        $validators = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
@@ -56,10 +59,11 @@ class AdminController extends Controller
             'subscription_plan' => 'nullable|string|max:255',
             'subscription_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'max_sub_doctors' => 'nullable|integer|min:0|max:255',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+        if ($validators->fails()) {
+            return response()->json(['errors' => $validators->errors()], 422);
         }
 
         $doctor = User::create([
@@ -73,6 +77,7 @@ class AdminController extends Controller
             'subscription_plan' => $request->subscription_plan,
             'subscription_amount' => $request->subscription_amount,
             'notes' => $request->notes,
+            'max_sub_doctors' => $request->max_sub_doctors ?? 0,
         ]);
 
         $doctor->assignRole('doctor');
@@ -106,6 +111,8 @@ class AdminController extends Controller
             'subscription_amount' => $doctor->subscription_amount,
             'subscription_status' => $doctor->getSubscriptionStatus(),
             'notes' => $doctor->notes,
+            'max_sub_doctors' => $doctor->max_sub_doctors ?? 0,
+            'sub_doctors_count' => $doctor->subDoctors->count(),
             'assistants' => $doctor->assistants->map(function ($assistant) {
                 return [
                     'id' => $assistant->id,
@@ -143,6 +150,7 @@ class AdminController extends Controller
             'subscription_plan' => 'nullable|string|max:255',
             'subscription_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'max_sub_doctors' => 'nullable|integer|min:0|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -151,7 +159,7 @@ class AdminController extends Controller
 
         $updateData = $request->only([
             'name', 'email', 'subscription_start', 'subscription_end',
-            'is_active', 'subscription_plan', 'subscription_amount', 'notes'
+            'is_active', 'subscription_plan', 'subscription_amount', 'notes', 'max_sub_doctors'
         ]);
 
         if ($request->filled('password')) {

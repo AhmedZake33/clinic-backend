@@ -13,14 +13,20 @@ use Illuminate\Support\Facades\Broadcast;
 |
 */
 
-// Private channel for individual doctors to receive their reservation updates
+// Private channel for individual doctors (and sub-doctors) to receive their reservation updates
 Broadcast::channel('doctor.{doctorId}', function ($user, $doctorId) {
-    return $user->role === 'doctor' && (int) $user->id === (int) $doctorId;
+    if ($user->role === 'doctor') {
+        return (int) $user->id === (int) $doctorId;
+    }
+    if ($user->role === 'sub-doctor') {
+        return (int) $user->id === (int) $doctorId;
+    }
+    return false;
 });
 
-// Private channel for assistants to receive all reservation updates
+// Private channel for assistants (and sub-doctors acting as staff) to receive all reservation updates
 Broadcast::channel('assistant.reservations', function ($user) {
-    return $user->role === 'assistant';
+    return in_array($user->role, ['assistant', 'sub-doctor']);
 });
 
 // Public channel for all reservation updates (authenticated users only)
@@ -36,6 +42,9 @@ Broadcast::channel('clinic.{clinicId}.assistant-calls', function ($user, $clinic
     }
     if ($user->role === 'doctor') {
         return (int) $user->id === (int) $clinicId;
+    }
+    if ($user->role === 'sub-doctor') {
+        return (int) $user->parent_doctor_id === (int) $clinicId;
     }
     return false;
 });

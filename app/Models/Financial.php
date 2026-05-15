@@ -20,13 +20,26 @@ class Financial extends Model
         'payment_status',
         'payment_method',
         'notes',
+        'reservation_service_id',
+        'voided',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid' => 'decimal:2',
         'remaining' => 'decimal:2',
+        'voided' => 'boolean',
     ];
+
+    public function reservationService()
+    {
+        return $this->belongsTo(ReservationService::class, 'reservation_service_id');
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
 
     public function reservation()
     {

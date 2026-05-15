@@ -12,7 +12,7 @@ class DoctorScheduleController extends Controller
 {
     public function getAvailability(User $doctor)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
@@ -24,12 +24,11 @@ class DoctorScheduleController extends Controller
 
     public function updateAvailability(Request $request, User $doctor)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
-        // Only the doctor themself can update their availability
-        if ($request->user()->role !== 'doctor' || $request->user()->id !== $doctor->id) {
+        if ($request->user()->id !== $doctor->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -80,7 +79,7 @@ class DoctorScheduleController extends Controller
 
     public function getHolidays(User $doctor)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
@@ -92,11 +91,11 @@ class DoctorScheduleController extends Controller
 
     public function addHoliday(Request $request, User $doctor)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
-        if ($request->user()->role !== 'doctor' || $request->user()->id !== $doctor->id) {
+        if ($request->user()->id !== $doctor->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -139,11 +138,11 @@ class DoctorScheduleController extends Controller
 
     public function deleteHoliday(Request $request, User $doctor, DoctorHoliday $holiday)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
-        if ($request->user()->role !== 'doctor' || $request->user()->id !== $doctor->id || $holiday->user_id !== $doctor->id) {
+        if ($request->user()->id !== $doctor->id || $holiday->user_id !== $doctor->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -158,7 +157,7 @@ class DoctorScheduleController extends Controller
      */
     public function getAvailableTimes(Request $request, User $doctor)
     {
-        if ($doctor->role !== 'doctor') {
+        if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
@@ -190,7 +189,6 @@ class DoctorScheduleController extends Controller
             ->where('day_of_week', $dayOfWeek)
             ->orderBy('start_time')
             ->get();
-
 
         if ($availabilities->isEmpty()) {
             return response()->json([

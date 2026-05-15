@@ -23,5 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Spatie\Permission\Exceptions\UnauthorizedException $e, $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+        });
     })->create();

@@ -38,6 +38,11 @@ trait ResolvesDoctor
             return $user->doctor_id;
         }
 
+        if ($user->role === 'sub-doctor') {
+            // Sub-doctors see only their own reservations (doctor_id = their own id)
+            return $user->id;
+        }
+
         return null;
     }
 
@@ -56,5 +61,28 @@ trait ResolvesDoctor
         }
 
         return $doctorId;
+    }
+
+    /**
+     * Returns the doctor's own ID plus all sub-doctors' IDs.
+     *
+     * - doctor   → [doctor.id, ...sub_doctor ids]
+     * - assistant → [doctor_id, ...sub_doctor ids of that doctor]
+     * - sub-doctor → [sub_doctor.id]  (only their own records)
+     */
+    protected function getDoctorIds(Request $request): array
+    {
+        $doctorId = $this->requireDoctorId($request);
+        $user = $request->user();
+
+        if (in_array($user->role, ['doctor', 'assistant'])) {
+            $subIds = \App\Models\User::where('role', 'sub-doctor')
+                ->where('parent_doctor_id', $doctorId)
+                ->pluck('id')
+                ->toArray();
+            return array_merge([$doctorId], $subIds);
+        }
+
+        return [$doctorId];
     }
 }

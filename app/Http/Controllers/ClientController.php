@@ -20,10 +20,15 @@ class ClientController extends Controller
 
     public function index(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        // Clients are stored under the primary (parent) doctor.
+        // Sub-doctors share the same client pool as their parent doctor.
+        $user = $request->user();
+        $primaryDoctorId = ($user->role === 'sub-doctor' && $user->parent_doctor_id)
+            ? $user->parent_doctor_id
+            : $this->requireDoctorId($request);
 
         $query = Client::with('creator')
-            ->where('doctor_id', $doctorId);
+            ->where('doctor_id', $primaryDoctorId);
 
         // Optional search by name/email/phone
         if ($search = $request->query('search')) {
@@ -49,7 +54,12 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
-        $doctorId = $this->requireDoctorId($request);
+        // Clients are always stored under the primary (parent) doctor so they are
+        // shared between the doctor and all sub-doctors.
+        $user = $request->user();
+        $doctorId = ($user->role === 'sub-doctor' && $user->parent_doctor_id)
+            ? $user->parent_doctor_id
+            : $this->requireDoctorId($request);
 
         $request->validate($this->clientRules());
 
@@ -64,9 +74,12 @@ class ClientController extends Controller
 
     public function show(Request $request, Client $client)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $user = $request->user();
+        $primaryDoctorId = ($user->role === 'sub-doctor' && $user->parent_doctor_id)
+            ? $user->parent_doctor_id
+            : $this->requireDoctorId($request);
 
-        if ($client->doctor_id !== $doctorId) {
+        if ($client->doctor_id !== $primaryDoctorId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -76,9 +89,12 @@ class ClientController extends Controller
 
     public function update(Request $request, Client $client)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $user = $request->user();
+        $primaryDoctorId = ($user->role === 'sub-doctor' && $user->parent_doctor_id)
+            ? $user->parent_doctor_id
+            : $this->requireDoctorId($request);
 
-        if ($client->doctor_id !== $doctorId) {
+        if ($client->doctor_id !== $primaryDoctorId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -137,9 +153,12 @@ class ClientController extends Controller
 
     public function destroy(Request $request, Client $client)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $user = $request->user();
+        $primaryDoctorId = ($user->role === 'sub-doctor' && $user->parent_doctor_id)
+            ? $user->parent_doctor_id
+            : $this->requireDoctorId($request);
 
-        if ($client->doctor_id !== $doctorId) {
+        if ($client->doctor_id !== $primaryDoctorId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

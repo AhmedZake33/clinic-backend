@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Purchase;
 use App\Enums\PurchaseCategory;
 use Illuminate\Validation\Rules\Enum as EnumRule;
@@ -10,18 +11,14 @@ use Illuminate\Support\Facades\Auth;
 
 class PurchaseController extends Controller
 {
+    use ResolvesDoctor;
     public function index(Request $request)
     {
         $query = Purchase::query();
 
-        // If authenticated and role is doctor/assistant, always scope to their doctor.
-        // Only honor an explicit doctor_id in the request for non-doctor/assistant roles (e.g., admin).
-        if (Auth::check() && in_array(Auth::user()->role, ['doctor', 'assistant'])) {
-            if (Auth::user()->role === 'doctor') {
-                $query->where('doctor_id', Auth::id());
-            } else {
-                $query->where('doctor_id', Auth::user()->doctor_id);
-            }
+        if (Auth::check() && in_array(Auth::user()->role, ['doctor', 'assistant', 'sub-doctor'])) {
+            $doctorIds = $this->getDoctorIds($request);
+            $query->whereIn('doctor_id', $doctorIds);
         } else {
             if ($request->filled('doctor_id')) {
                 $query->where('doctor_id', $request->input('doctor_id'));
@@ -76,10 +73,10 @@ class PurchaseController extends Controller
 
         // If doctor_id not provided, associate based on authenticated user's role
         if (empty($data['doctor_id']) && Auth::user()) {
-            if (Auth::user()->role === 'doctor') {
+            $role = Auth::user()->role;
+            if ($role === 'doctor' || $role === 'sub-doctor') {
                 $data['doctor_id'] = Auth::id();
-            } elseif (Auth::user()->role === 'assistant') {
-                // assistants belong to a doctor via doctor_id on user
+            } elseif ($role === 'assistant') {
                 $data['doctor_id'] = Auth::user()->doctor_id ?? null;
             }
         }
@@ -130,10 +127,11 @@ class PurchaseController extends Controller
 
         // if doctor_id not provided, set based on current user's role
         if (empty($data['doctor_id']) && Auth::user()) {
-            if (Auth::user()->role === 'doctor') {
+            $role = Auth::user()->role;
+            if ($role === 'doctor' || $role === 'sub-doctor') {
                 $purchase->doctor_id = Auth::id();
                 $purchase->save();
-            } elseif (Auth::user()->role === 'assistant') {
+            } elseif ($role === 'assistant') {
                 $purchase->doctor_id = Auth::user()->doctor_id ?? $purchase->doctor_id;
                 $purchase->save();
             }
@@ -167,12 +165,12 @@ class PurchaseController extends Controller
         $to = $request->input('to');
         $category = $request->input('category');
 
-        // Determine doctor scoping: for doctor/assistant, use authenticated context.
-        $doctorId = null;
-        if (Auth::check() && in_array(Auth::user()->role, ['doctor', 'assistant'])) {
-            $doctorId = Auth::user()->role === 'doctor' ? Auth::id() : Auth::user()->doctor_id;
+        // Determine doctor scoping using getDoctorIds for all applicable roles.
+        $doctorIds = null;
+        if (Auth::check() && in_array(Auth::user()->role, ['doctor', 'assistant', 'sub-doctor'])) {
+            $doctorIds = $this->getDoctorIds($request);
         } elseif ($request->filled('doctor_id')) {
-            $doctorId = $request->input('doctor_id');
+            $doctorIds = [$request->input('doctor_id')];
         }
 
         $today = date('Y-m-d');
@@ -182,8 +180,8 @@ class PurchaseController extends Controller
         if ($category) {
             $query->where('category', $category);
         }
-        if ($doctorId) {
-            $query->where('doctor_id', $doctorId);
+        if ($doctorIds) {
+            $query->whereIn('doctor_id', $doctorIds);
         }
 
         if ($from && $to) {

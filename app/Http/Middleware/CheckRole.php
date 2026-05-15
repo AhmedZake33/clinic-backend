@@ -31,7 +31,7 @@ class CheckRole
         }
 
         if (!$hasRole) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+            return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         // Additional check: ensure doctor's subscription is active
@@ -42,6 +42,14 @@ class CheckRole
         // Block assistants whose doctor's subscription is expired
         if ($user->role === 'assistant' && $user->doctor_id) {
             $doctor = \App\Models\User::find($user->doctor_id);
+            if ($doctor && $doctor->isSubscriptionExpired()) {
+                return response()->json(['error' => 'The doctor\'s subscription has expired. Please contact the administrator.'], 403);
+            }
+        }
+
+        // Block sub-doctors whose parent doctor's subscription is expired
+        if ($user->role === 'sub-doctor' && $user->parent_doctor_id) {
+            $doctor = \App\Models\User::find($user->parent_doctor_id);
             if ($doctor && $doctor->isSubscriptionExpired()) {
                 return response()->json(['error' => 'The doctor\'s subscription has expired. Please contact the administrator.'], 403);
             }

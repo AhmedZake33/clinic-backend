@@ -24,6 +24,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'parent_doctor_id',
         'doctor_id',
         'subscription_start',
         'subscription_end',
@@ -31,6 +32,7 @@ class User extends Authenticatable
         'subscription_plan',
         'subscription_amount',
         'notes',
+        'max_sub_doctors',
     ];
 
     /**
@@ -69,11 +71,27 @@ class User extends Authenticatable
     }
 
     /**
+     * The parent doctor for a sub-doctor.
+     */
+    public function parentDoctor()
+    {
+        return $this->belongsTo(User::class, 'parent_doctor_id');
+    }
+
+    /**
      * Assistants belonging to this doctor.
      */
     public function assistants()
     {
         return $this->hasMany(User::class, 'doctor_id');
+    }
+
+    /**
+     * Sub-doctors created/managed by this doctor.
+     */
+    public function subDoctors()
+    {
+        return $this->hasMany(User::class, 'parent_doctor_id');
     }
 
     /**
