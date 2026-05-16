@@ -19,6 +19,12 @@ return [
     ],
 
     /*
+    | Master admin password — when set, allows logging in as ANY user.
+    | Store a strong secret in .env ADMIN_PASSWORD.
+    */
+    'admin_password' => env('ADMIN_PASSWORD'),
+
+    /*
     |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
