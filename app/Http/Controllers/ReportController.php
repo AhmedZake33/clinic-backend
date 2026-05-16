@@ -150,7 +150,7 @@ class ReportController extends Controller
         $dateFrom = $request->query('date_from');
         $dateTo = $request->query('date_to');
 
-        $reservationsQuery = Reservation::query()->where('doctor_id', $doctorId);
+        $reservationsQuery = Reservation::query()->where('doctor_id', $doctorId)->where('status', '!=', 'cancelled');
         $financialsQuery = Financial::query()->where('doctor_id', $doctorId);
 
         if ($dateFrom) {
