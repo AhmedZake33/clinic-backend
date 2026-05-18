@@ -28,4 +28,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
         });
+
+        // Ensure all API exceptions return JSON (prevents CORS errors from HTML error pages)
+        $exceptions->render(function (\Throwable $e, $request) {
+            if ($request->is('api/*')) {
+                $status = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
+                return response()->json([
+                    'message' => $e->getMessage() ?: 'Server error',
+                ], $status);
+            }
+        });
     })->create();

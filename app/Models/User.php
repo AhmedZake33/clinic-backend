@@ -178,6 +178,21 @@ class User extends Authenticatable
     }
 
     /**
+     * Override password reset notification to point to the frontend URL.
+     */
+    public function sendPasswordResetNotification($token)
+    {
+        $frontendUrl = env('FRONTEND_URL', 'http://localhost:8080');
+        $url = $frontendUrl . '/reset-password?token=' . $token . '&email=' . urlencode($this->email);
+
+        \Illuminate\Auth\Notifications\ResetPassword::createUrlUsing(function ($notifiable, $token) use ($url) {
+            return $url;
+        });
+
+        $this->notify(new \Illuminate\Auth\Notifications\ResetPassword($token));
+    }
+
+    /**
      * Get subscription status.
      */
     public function getSubscriptionStatus()

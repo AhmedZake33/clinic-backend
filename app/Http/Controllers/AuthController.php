@@ -6,6 +6,10 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -189,5 +193,80 @@ class AuthController extends Controller
             'permissions' => $permissions,
             'roles' => $roles,
         ]);
+    }
+
+    /**
+     * Change password for authenticated user.
+     */
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'password'         => 'required|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+
+        $user->update(['password' => Hash::make($request->password)]);
+
+        return response()->json(['message' => 'Password changed successfully.']);
+    }
+
+    /**
+     * Send password reset link to email.
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        // Always return the same response regardless of whether the email exists
+        // to prevent user enumeration attacks (OWASP A07)
+        try {
+            Password::sendResetLink($request->only('email'));
+        } catch (\Exception $e) {
+            // Silently fail — do not reveal errors to the caller
+        }
+
+        return response()->json([
+            'message' => __('passwords.sent'),
+        ]);
+    }
+
+    /**
+     * Reset password using token from email.
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token'    => 'required',
+            'email'    => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        try {
+            $status = Password::reset(
+                $request->only('email', 'password', 'password_confirmation', 'token'),
+                function (User $user, string $password) {
+                    $user->forceFill([
+                        'password'       => Hash::make($password),
+                        'remember_token' => Str::random(60),
+                    ])->save();
+
+                    event(new PasswordReset($user));
+                }
+            );
+
+            if ($status === Password::PASSWORD_RESET) {
+                return response()->json(['message' => __($status)]);
+            }
+
+            return response()->json(['message' => __($status)], 422);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to reset password. Please try again.'], 500);
+        }
     }
 }

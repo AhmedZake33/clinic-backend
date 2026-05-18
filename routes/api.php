@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Route;
 // Public routes
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // Broadcasting auth route for Sanctum
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
@@ -37,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/my-permissions', [AuthController::class, 'myPermissions']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 
     // Admin routes
     Route::middleware(['role:admin'])->group(function () {
