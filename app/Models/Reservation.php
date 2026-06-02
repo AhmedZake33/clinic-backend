@@ -69,6 +69,11 @@ class Reservation extends Model
         return $this->hasOne(Financial::class);
     }
 
+    public function logs()
+    {
+        return $this->hasMany(ReservationLog::class)->latest();
+    }
+
     public function getCompletionFilesAttribute()
     {
         if (!$this->relationLoaded('archive') || !$this->archive) {

@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Traits\ResolvesDoctor;
 use App\Models\DoctorService;
+use App\Models\Reservation;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class DoctorServiceController extends Controller
@@ -17,6 +19,38 @@ class DoctorServiceController extends Controller
         $services = DoctorService::where('doctor_id', $doctorId)
             ->orderBy('name')
             ->get();
+        return response()->json($services);
+    }
+
+    public function forReservation(Request $request, Reservation $reservation)
+    {
+        $doctorIds = $this->getDoctorIds($request);
+
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
+            abort(403);
+        }
+
+        $services = DoctorService::where('doctor_id', $reservation->doctor_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($services);
+    }
+
+    public function forDoctor(Request $request, User $doctor)
+    {
+        $doctorIds = $this->getDoctorIds($request);
+
+        if (!in_array($doctor->id, $doctorIds) || !in_array($doctor->role, ['doctor', 'sub-doctor'])) {
+            abort(403);
+        }
+
+        $services = DoctorService::where('doctor_id', $doctor->id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
         return response()->json($services);
     }
 

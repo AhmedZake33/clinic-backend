@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\NormalizesPhoneNumbers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -9,6 +10,8 @@ use Spatie\Permission\Models\Permission;
 
 class SubDoctorController extends Controller
 {
+    use NormalizesPhoneNumbers;
+
     // List sub-doctors for authenticated doctor
     public function index(Request $request)
     {
@@ -25,9 +28,13 @@ class SubDoctorController extends Controller
     public function store(Request $request)
     {
         $doctor = $request->user();
+        $this->normalizePhoneInputs($request);
+
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'nullable|string|min:6',
         ]);
 
@@ -47,6 +54,8 @@ class SubDoctorController extends Controller
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
+            'phone' => $data['phone'] ?? null,
+            'whatsapp_number' => $data['whatsapp_number'] ?? null,
             'password' => Hash::make($plainPassword),
             'role' => 'sub-doctor',
             'parent_doctor_id' => $doctor->id,
@@ -68,15 +77,21 @@ class SubDoctorController extends Controller
             return response()->json(['message' => 'Not authorized'], 403);
         }
 
+        $this->normalizePhoneInputs($request);
+
         $data = $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'email' => 'sometimes|required|email|unique:users,email,'.$user->id,
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'nullable|string|min:6',
             'is_active' => 'boolean',
         ]);
 
         if (isset($data['name'])) $user->name = $data['name'];
         if (isset($data['email'])) $user->email = $data['email'];
+        if (array_key_exists('phone', $data)) $user->phone = $data['phone'];
+        if (array_key_exists('whatsapp_number', $data)) $user->whatsapp_number = $data['whatsapp_number'];
         if (!empty($data['password'])) $user->password = Hash::make($data['password']);
         if (isset($data['is_active'])) $user->is_active = $data['is_active'];
         $user->save();

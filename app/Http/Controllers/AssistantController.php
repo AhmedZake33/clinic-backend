@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\NormalizesPhoneNumbers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 class AssistantController extends Controller
 {
+    use NormalizesPhoneNumbers;
+
     /**
      * List assistants for the authenticated doctor.
      */
@@ -18,7 +21,7 @@ class AssistantController extends Controller
         $assistants = User::where('doctor_id', $doctor->id)
             ->where('role', 'assistant')
             ->latest()
-            ->get(['id', 'name', 'email', 'doctor_id', 'created_at']);
+            ->get(['id', 'name', 'email', 'phone', 'whatsapp_number', 'doctor_id', 'created_at']);
 
         return response()->json($assistants);
     }
@@ -28,9 +31,13 @@ class AssistantController extends Controller
      */
     public function store(Request $request)
     {
+        $this->normalizePhoneInputs($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users',
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'required|min:8|confirmed',
         ]);
 
@@ -39,6 +46,8 @@ class AssistantController extends Controller
         $assistant = User::create([
             'name' => $request->name,
             'email' => $request->email,
+            'phone' => $request->phone,
+            'whatsapp_number' => $request->whatsapp_number,
             'password' => Hash::make($request->password),
             'role' => 'assistant',
             'doctor_id' => $doctor->id,
@@ -61,15 +70,21 @@ class AssistantController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $this->normalizePhoneInputs($request);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $assistant->id,
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'nullable|min:8|confirmed',
         ]);
 
         $data = [
             'name' => $request->name,
             'email' => $request->email,
+            'phone' => $request->phone,
+            'whatsapp_number' => $request->whatsapp_number,
         ];
 
         if ($request->filled('password')) {

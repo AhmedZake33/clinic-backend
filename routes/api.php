@@ -115,14 +115,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/reservations/{reservation}/confirm', [ReservationController::class, 'confirm']);
     });
 
-    // Doctor and sub-doctor can complete reservations
-    Route::middleware(['role:doctor,sub-doctor'])->group(function () {
+    // Doctor, assistant and sub-doctor can complete reservations
+    Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete']);
     });
 
     // Doctor, assistant and sub-doctor can print prescriptions
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::get('/reservations/{reservation}/prescription', [ReservationController::class, 'generatePrescription']);
+        Route::get('/reservations/{reservation}/medicines-prescription', [ReservationController::class, 'generateMedicinesPrescription']);
+        Route::get('/reservations/{reservation}/details-pdf', [ReservationController::class, 'generateReservationDetailsPdf']);
     });
 
     // OpenFDA drug search (accessible by doctors and sub-doctors)
@@ -155,6 +157,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/reservations/{reservation}', [ReservationController::class, 'update']);
         Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy']);
 
+    });
+
+    Route::middleware(['role:doctor,sub-doctor'])->group(function () {
         Route::get('/reports/summary', [ReportController::class, 'summary']);
         Route::get('/reports/pdf', [ReportController::class, 'exportPdf']);
     });
@@ -198,6 +203,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/financials', [FinancialController::class, 'store']);
         Route::put('/financials/{financial}', [FinancialController::class, 'update']);
         Route::delete('/financials/{financial}', [FinancialController::class, 'destroy']);
+    });
+
+    Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         // Purchases (create/update/delete)
         Route::post('/purchases', [PurchaseController::class, 'store']);
         Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
@@ -228,6 +236,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Services on a specific reservation — doctor, sub-doctor & assistant (permission-protected)
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
+        Route::get('/doctors/{doctor}/doctor-services', [DoctorServiceController::class, 'forDoctor'])
+            ->middleware('permission:reservation-services.view');
+        Route::get('/reservations/{reservation}/doctor-services', [DoctorServiceController::class, 'forReservation'])
+            ->middleware('permission:reservation-services.view');
         Route::get('/reservations/{reservation}/services', [ReservationServiceController::class, 'index'])
             ->middleware('permission:reservation-services.view');
         Route::post('/reservations/{reservation}/services', [ReservationServiceController::class, 'store'])

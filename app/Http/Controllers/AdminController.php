@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\NormalizesPhoneNumbers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -10,6 +11,8 @@ use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
+    use NormalizesPhoneNumbers;
+
     /**
      * Get all doctors with subscription info.
      */
@@ -25,6 +28,8 @@ class AdminController extends Controller
                     'id' => $doctor->id,
                     'name' => $doctor->name,
                     'email' => $doctor->email,
+                    'phone' => $doctor->phone,
+                    'whatsapp_number' => $doctor->whatsapp_number,
                     'subscription_start' => $doctor->subscription_start,
                     'subscription_end' => $doctor->subscription_end,
                     'is_active' => $doctor->is_active,
@@ -49,9 +54,13 @@ class AdminController extends Controller
      */
     public function storeDoctor(Request $request)
     {
+        $this->normalizePhoneInputs($request);
+
         $validators = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'required|string|min:8',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
@@ -69,6 +78,8 @@ class AdminController extends Controller
         $doctor = User::create([
             'name' => $request->name,
             'email' => $request->email,
+            'phone' => $request->phone,
+            'whatsapp_number' => $request->whatsapp_number,
             'password' => Hash::make($request->password),
             'role' => 'doctor',
             'subscription_start' => $request->subscription_start,
@@ -104,6 +115,8 @@ class AdminController extends Controller
             'id' => $doctor->id,
             'name' => $doctor->name,
             'email' => $doctor->email,
+            'phone' => $doctor->phone,
+            'whatsapp_number' => $doctor->whatsapp_number,
             'subscription_start' => $doctor->subscription_start,
             'subscription_end' => $doctor->subscription_end,
             'is_active' => $doctor->is_active,
@@ -118,6 +131,8 @@ class AdminController extends Controller
                     'id' => $assistant->id,
                     'name' => $assistant->name,
                     'email' => $assistant->email,
+                    'phone' => $assistant->phone,
+                    'whatsapp_number' => $assistant->whatsapp_number,
                     'created_at' => $assistant->created_at,
                 ];
             }),
@@ -140,9 +155,13 @@ class AdminController extends Controller
             return response()->json(['error' => 'User is not a doctor'], 404);
         }
 
+        $this->normalizePhoneInputs($request);
+
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'email' => ['sometimes', 'required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($doctor->id)],
+            'phone' => 'nullable|string|max:20',
+            'whatsapp_number' => 'nullable|string|max:20',
             'password' => 'nullable|string|min:8',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
@@ -158,7 +177,7 @@ class AdminController extends Controller
         }
 
         $updateData = $request->only([
-            'name', 'email', 'subscription_start', 'subscription_end',
+            'name', 'email', 'phone', 'whatsapp_number', 'subscription_start', 'subscription_end',
             'is_active', 'subscription_plan', 'subscription_amount', 'notes', 'max_sub_doctors'
         ]);
 

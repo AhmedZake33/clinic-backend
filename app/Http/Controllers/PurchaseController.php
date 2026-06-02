@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\Auth;
 class PurchaseController extends Controller
 {
     use ResolvesDoctor;
+
+    private const PAYMENT_METHODS = 'Cash,Card,Bank Transfer,Other,InstaPay';
+
     public function index(Request $request)
     {
         $query = Purchase::query();
@@ -63,23 +66,13 @@ class PurchaseController extends Controller
             'quantity' => 'nullable|integer|min:1',
             'amount_paid' => 'required|numeric|min:0',
             'supplier' => 'nullable|string|max:255',
-            'payment_method' => 'required|string|in:Cash,Card,Bank Transfer',
+            'payment_method' => 'required|string|in:' . self::PAYMENT_METHODS,
             'purchase_date' => 'required|date',
             'notes' => 'nullable|string',
-            'doctor_id' => 'nullable|exists:users,id',
         ]);
 
         $data['created_by'] = Auth::id();
-
-        // If doctor_id not provided, associate based on authenticated user's role
-        if (empty($data['doctor_id']) && Auth::user()) {
-            $role = Auth::user()->role;
-            if ($role === 'doctor' || $role === 'sub-doctor') {
-                $data['doctor_id'] = Auth::id();
-            } elseif ($role === 'assistant') {
-                $data['doctor_id'] = Auth::user()->doctor_id ?? null;
-            }
-        }
+        $data['doctor_id'] = $this->requireDoctorId($request);
 
         $purchase = Purchase::create($data);
 
@@ -99,6 +92,8 @@ class PurchaseController extends Controller
 
     public function show(Purchase $purchase)
     {
+        $this->authorizePurchaseScope(request(), $purchase);
+
         $labelsEn = PurchaseCategory::labels('en');
         $labelsAr = PurchaseCategory::labels('ar');
         $purchase->category_labels = [
@@ -111,31 +106,20 @@ class PurchaseController extends Controller
 
     public function update(Request $request, Purchase $purchase)
     {
+        $this->authorizePurchaseScope($request, $purchase);
+
         $data = $request->validate([
             'item_name' => 'sometimes|required|string|max:255',
             'category' => ['sometimes', 'required', new EnumRule(PurchaseCategory::class)],
             'quantity' => 'nullable|integer|min:1',
             'amount_paid' => 'sometimes|required|numeric|min:0',
             'supplier' => 'nullable|string|max:255',
-            'payment_method' => 'sometimes|required|string|in:Cash,Card,Bank Transfer',
+            'payment_method' => 'sometimes|required|string|in:' . self::PAYMENT_METHODS,
             'purchase_date' => 'sometimes|required|date',
             'notes' => 'nullable|string',
-            'doctor_id' => 'nullable|exists:users,id',
         ]);
 
         $purchase->update($data);
-
-        // if doctor_id not provided, set based on current user's role
-        if (empty($data['doctor_id']) && Auth::user()) {
-            $role = Auth::user()->role;
-            if ($role === 'doctor' || $role === 'sub-doctor') {
-                $purchase->doctor_id = Auth::id();
-                $purchase->save();
-            } elseif ($role === 'assistant') {
-                $purchase->doctor_id = Auth::user()->doctor_id ?? $purchase->doctor_id;
-                $purchase->save();
-            }
-        }
 
         $purchase->load('doctor');
 
@@ -148,10 +132,19 @@ class PurchaseController extends Controller
         return response()->json($purchase);
     }
 
-    public function destroy(Purchase $purchase)
+    public function destroy(Request $request, Purchase $purchase)
     {
+        $this->authorizePurchaseScope($request, $purchase);
+
         $purchase->delete();
         return response()->json(['message' => 'Purchase deleted']);
+    }
+
+    private function authorizePurchaseScope(Request $request, Purchase $purchase): void
+    {
+        if (Auth::check() && in_array(Auth::user()->role, ['doctor', 'assistant', 'sub-doctor'])) {
+            abort_unless(in_array($purchase->doctor_id, $this->getDoctorIds($request)), 403, 'Unauthorized');
+        }
     }
 
     // (Removed daily/monthly/category helper endpoints — use unified /purchases/stats only)

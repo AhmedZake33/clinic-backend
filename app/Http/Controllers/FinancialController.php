@@ -19,7 +19,8 @@ class FinancialController extends Controller
         // return response()->json($doctorIds);
         // return response()->json($doctorIds);
         $query = Financial::with(['reservation', 'client', 'doctor', 'creator'])
-            ->whereIn('doctor_id', $doctorIds);
+            ->whereIn('doctor_id', $doctorIds)
+            ->where('voided', false);
 
         // Filter by payment status
         if ($status = $request->query('payment_status')) {
@@ -212,7 +213,7 @@ class FinancialController extends Controller
             if ($to)   $q->whereDate('created_at', '<=', $to);
         };
 
-        $query = Financial::query()->whereIn('doctor_id', $doctorIds);
+        $query = Financial::query()->whereIn('doctor_id', $doctorIds)->where('voided', false);
         $applyFilters($query);
 
         $totalAmount    = (clone $query)->sum('amount');
@@ -231,7 +232,7 @@ class FinancialController extends Controller
 
         $byDoctor = [];
         foreach ($doctorIds as $doctorId) {
-            $dq = Financial::query()->where('doctor_id', $doctorId);
+            $dq = Financial::query()->where('doctor_id', $doctorId)->where('voided', false);
             $applyFilters($dq);
 
             $doctor = $doctors->get($doctorId);

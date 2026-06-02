@@ -6,6 +6,7 @@ use App\Events\ReservationUpdated;
 use App\Http\Traits\ResolvesDoctor;
 use App\Models\DoctorAvailability;
 use App\Models\Reservation;
+use App\Models\ReservationLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,14 @@ class CheckInController extends Controller
             'status' => $reservation->status === 'pending' ? 'confirmed' : $reservation->status,
         ]);
 
+        ReservationLog::create([
+            'reservation_id' => $reservation->id,
+            'user_id' => $request->user()?->id,
+            'action' => 'checked_in',
+            'description' => 'Patient checked in',
+            'meta' => ['waiting_number' => $waitingNumber],
+        ]);
+
         $reservation->load(['client', 'doctor', 'creator']);
         broadcast(new ReservationUpdated($reservation))->toOthers();
 
@@ -96,6 +105,13 @@ class CheckInController extends Controller
         $reservation->update([
             'checked_in_at' => null,
             'waiting_number' => null,
+        ]);
+
+        ReservationLog::create([
+            'reservation_id' => $reservation->id,
+            'user_id' => $request->user()?->id,
+            'action' => 'check_in_undone',
+            'description' => 'Check-in undone',
         ]);
 
         $reservation->load(['client', 'doctor', 'creator']);

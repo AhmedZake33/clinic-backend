@@ -11,6 +11,7 @@ use App\Models\Financial;
 use App\Models\Transaction;
 use App\Models\Archive;
 use App\Models\Reservation;
+use App\Models\ReservationLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,17 @@ use TCPDF;
 class ReservationController extends Controller
 {
     use ResolvesDoctor;
+
+    private function logReservationAction(Reservation $reservation, Request $request, string $action, ?string $description = null, array $meta = []): void
+    {
+        ReservationLog::create([
+            'reservation_id' => $reservation->id,
+            'user_id' => $request->user()?->id,
+            'action' => $action,
+            'description' => $description,
+            'meta' => $meta ?: null,
+        ]);
+    }
 
     public function index(Request $request)
     {
@@ -132,6 +144,10 @@ class ReservationController extends Controller
             'status' => 'pending',
         ]);
 
+        $this->logReservationAction($reservation, $request, 'created', 'Reservation created', [
+            'appointment_date' => $reservation->appointment_date,
+        ]);
+
         $reservation->load(['client', 'doctor', 'creator']);
 
         // Create financial record and optionally an initial transaction
@@ -191,7 +207,7 @@ class ReservationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $reservation->load(['client', 'doctor', 'creator', 'archive.children']);
+        $reservation->load(['client', 'doctor', 'creator', 'archive.children', 'logs.actor']);
         return response()->json($reservation);
     }
 
@@ -250,7 +266,11 @@ class ReservationController extends Controller
         }
 
         $reservation->update($request->all());
-        $reservation->load(['client', 'doctor', 'creator']);
+        $this->logReservationAction($reservation, $request, $newStatus !== $currentStatus ? 'status_changed' : 'updated', 'Reservation updated', [
+            'from_status' => $currentStatus,
+            'to_status' => $newStatus,
+        ]);
+        $reservation->load(['client', 'doctor', 'creator', 'logs.actor']);
 
         // Broadcast event for real-time updates (exclude the sender)
         broadcast(new ReservationUpdated($reservation))->toOthers();
@@ -268,7 +288,8 @@ class ReservationController extends Controller
         }
 
         $reservation->update(['status' => 'confirmed']);
-        $reservation->load(['client', 'doctor', 'creator']);
+        $this->logReservationAction($reservation, $request, 'confirmed', 'Reservation confirmed');
+        $reservation->load(['client', 'doctor', 'creator', 'logs.actor']);
 
         broadcast(new ReservationUpdated($reservation))->toOthers();
 
@@ -279,17 +300,16 @@ class ReservationController extends Controller
     {
         $user = $request->user();
 
-        // Only doctors and sub-doctors can complete reservations
-        if (!in_array($user->role, ['doctor', 'sub-doctor'])) {
-            return response()->json(['error' => 'Only doctors can complete reservations'], 403);
+        // Doctors, assistants and sub-doctors can complete reservations.
+        if (!in_array($user->role, ['doctor', 'assistant', 'sub-doctor'])) {
+            return response()->json(['error' => 'You are not allowed to complete reservations'], 403);
         }
 
-        // Resolve the owning doctor ID for this user
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        // Only the assigned doctor (or their sub-doctor) can complete
-        if ($reservation->doctor_id !== $doctorId) {
-            return response()->json(['error' => 'You can only complete your own reservations'], 403);
+        // Only reservations in the user's doctor scope can be completed.
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
+            return response()->json(['error' => 'You can only complete reservations in your clinic scope'], 403);
         }
 
         $request->validate([
@@ -320,6 +340,8 @@ class ReservationController extends Controller
             'completed_at' => now(),
         ]);
 
+        $this->logReservationAction($reservation, $request, 'completed', 'Reservation completed');
+
         if ($request->hasFile('files')) {
             $archiveFolder = $this->ensureReservationArchiveFolder($reservation);
 
@@ -331,7 +353,7 @@ class ReservationController extends Controller
             }
         }
 
-        $reservation->load(['client', 'doctor', 'creator', 'archive.children']);
+        $reservation->load(['client', 'doctor', 'creator', 'archive.children', 'logs.actor']);
 
         // Broadcast event for real-time updates (exclude the sender)
         broadcast(new ReservationCompleted($reservation))->toOthers();
@@ -668,6 +690,294 @@ class ReservationController extends Controller
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
     }
 
+    public function generateReservationDetailsPdf(Request $request, Reservation $reservation)
+    {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'You can only generate details for your own reservations'], 403);
+        }
+
+        $reservation->load(['client', 'doctor', 'creator']);
+
+        $lang = strtolower((string) ($request->query('lang') ?: $request->header('Accept-Language', 'en')));
+        $isArabic = str_starts_with($lang, 'ar');
+
+        $labels = $isArabic
+            ? [
+                'clinic' => 'العيادة الطبية',
+                'title' => 'تفاصيل الحجز',
+                'clientInfo' => 'بيانات العميل',
+                'reservationInfo' => 'بيانات الحجز',
+                'name' => 'الاسم',
+                'email' => 'البريد الإلكتروني',
+                'phone' => 'الهاتف',
+                'whatsapp' => 'واتساب',
+                'doctor' => 'الطبيب',
+                'status' => 'الحالة',
+                'appointment' => 'الموعد',
+                'created' => 'تاريخ الإنشاء',
+                'completedAt' => 'تاريخ الإكمال',
+                'notes' => 'الملاحظات',
+                'diagnosis' => 'التشخيص',
+                'treatment' => 'العلاج',
+                'currentProcedures' => 'الإجراءات الحالية',
+                'procedureNotes' => 'ملاحظات الإجراءات',
+                'nextProcedures' => 'الإجراءات القادمة',
+                'requirements' => 'متطلبات إضافية',
+                'xrayRequired' => 'يتطلب أشعة سينية',
+                'labRequired' => 'يتطلب تحاليل مخبرية',
+                'xrayNotes' => 'ملاحظات الأشعة',
+                'labNotes' => 'ملاحظات التحاليل',
+                'na' => 'غير متوفر',
+            ]
+            : [
+                'clinic' => 'Medical Clinic',
+                'title' => 'Reservation Details',
+                'clientInfo' => 'Client Information',
+                'reservationInfo' => 'Reservation Information',
+                'name' => 'Name',
+                'email' => 'Email',
+                'phone' => 'Phone',
+                'whatsapp' => 'WhatsApp',
+                'doctor' => 'Doctor',
+                'status' => 'Status',
+                'appointment' => 'Appointment',
+                'created' => 'Created',
+                'completedAt' => 'Completed At',
+                'notes' => 'Notes',
+                'diagnosis' => 'Diagnosis',
+                'treatment' => 'Treatment',
+                'currentProcedures' => 'Current Procedures',
+                'procedureNotes' => 'Procedure Notes',
+                'nextProcedures' => 'Next Procedures',
+                'requirements' => 'Additional Requirements',
+                'xrayRequired' => 'Requires X-Ray',
+                'labRequired' => 'Requires Lab Tests',
+                'xrayNotes' => 'X-Ray Notes',
+                'labNotes' => 'Lab Notes',
+                'na' => 'N/A',
+            ];
+
+        $align = $isArabic ? 'R' : 'L';
+
+        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator('Medical Clinic System');
+        $pdf->SetAuthor('Dr. ' . $reservation->doctor->name);
+        $pdf->SetTitle($labels['title']);
+        $pdf->SetSubject($labels['title'] . ' - ' . $reservation->client->name);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->setRTL($isArabic);
+        $pdf->SetMargins(15, 20, 15);
+        $pdf->SetAutoPageBreak(true, 25);
+        $pdf->AddPage();
+
+        $pdf->SetFillColor(44, 90, 160);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetFont('dejavusans', 'B', 16);
+        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Ln(4);
+        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
+        $pdf->Ln(4);
+
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['clientInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $this->pdfLabelValue($pdf, $labels['name'], $reservation->client->name, $align);
+        $this->pdfLabelValue($pdf, $labels['email'], $reservation->client->email ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['phone'], $reservation->client->phone ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['whatsapp'], $reservation->client->whatsapp_number ?: $labels['na'], $align);
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['reservationInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $this->pdfLabelValue($pdf, $labels['doctor'], 'Dr. ' . $reservation->doctor->name, $align);
+        $this->pdfLabelValue($pdf, $labels['status'], $reservation->status, $align);
+        $this->pdfLabelValue($pdf, $labels['appointment'], \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y H:i'), $align);
+        $this->pdfLabelValue($pdf, $labels['created'], \Carbon\Carbon::parse($reservation->created_at)->format('M d, Y H:i'), $align);
+        if ($reservation->completed_at) {
+            $this->pdfLabelValue($pdf, $labels['completedAt'], \Carbon\Carbon::parse($reservation->completed_at)->format('M d, Y H:i'), $align);
+        }
+
+        $sections = [
+            'notes' => $reservation->notes,
+            'diagnosis' => $reservation->diagnosis,
+            'treatment' => $reservation->treatment,
+            'currentProcedures' => $reservation->current_procedures,
+            'procedureNotes' => $reservation->procedure_notes,
+            'nextProcedures' => $reservation->next_procedures,
+        ];
+
+        foreach ($sections as $labelKey => $value) {
+            if (!$value) {
+                continue;
+            }
+
+            $pdf->Ln(3);
+            $pdf->SetFont('dejavusans', 'B', 11);
+            $pdf->Cell(0, 7, $labels[$labelKey], 0, 1, $align, 1);
+            $pdf->SetFont('dejavusans', '', 10);
+            $pdf->MultiCell(0, 6, $value, 1, $align);
+        }
+
+        if ($reservation->requires_xray || $reservation->requires_lab) {
+            $pdf->Ln(3);
+            $pdf->SetFont('dejavusans', 'B', 11);
+            $pdf->Cell(0, 7, $labels['requirements'], 0, 1, $align, 1);
+            $pdf->SetFont('dejavusans', '', 10);
+            if ($reservation->requires_xray) {
+                $pdf->Cell(0, 6, '- ' . $labels['xrayRequired'], 0, 1, $align);
+                if ($reservation->xray_notes) {
+                    $pdf->MultiCell(0, 6, $labels['xrayNotes'] . ': ' . $reservation->xray_notes, 0, $align);
+                }
+            }
+            if ($reservation->requires_lab) {
+                $pdf->Cell(0, 6, '- ' . $labels['labRequired'], 0, 1, $align);
+                if ($reservation->lab_notes) {
+                    $pdf->MultiCell(0, 6, $labels['labNotes'] . ': ' . $reservation->lab_notes, 0, $align);
+                }
+            }
+        }
+
+        $filePrefix = $isArabic ? 'reservation-details-ar' : 'reservation-details-en';
+        $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
+
+        return response($pdf->Output($fileName, 'S'))
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    public function generateMedicinesPrescription(Request $request, Reservation $reservation)
+    {
+        $doctorId = $this->requireDoctorId($request);
+
+        if ($reservation->doctor_id !== $doctorId) {
+            return response()->json(['error' => 'You can only generate prescriptions for your own reservations'], 403);
+        }
+
+        if ($reservation->status !== 'completed') {
+            return response()->json(['error' => 'Only completed reservations can have prescriptions generated'], 400);
+        }
+
+        $reservation->load(['client', 'doctor']);
+
+        $lang = strtolower((string) ($request->query('lang') ?: $request->header('Accept-Language', 'en')));
+        $isArabic = str_starts_with($lang, 'ar');
+
+        $labels = $isArabic
+            ? [
+                'clinic' => 'العيادة الطبية',
+                'title' => 'روشتة الأدوية',
+                'patientInfo' => 'بيانات العميل',
+                'doctorInfo' => 'بيانات الطبيب',
+                'name' => 'الاسم',
+                'email' => 'البريد الإلكتروني',
+                'phone' => 'الهاتف',
+                'whatsapp' => 'واتساب',
+                'dob' => 'تاريخ الميلاد',
+                'address' => 'العنوان',
+                'job' => 'الوظيفة',
+                'doctor' => 'الطبيب',
+                'appointment' => 'موعد الحجز',
+                'date' => 'التاريخ',
+                'medicines' => 'الأدوية',
+                'noMedicines' => 'لم يتم تسجيل أدوية.',
+                'signature' => 'توقيع الطبيب',
+                'na' => 'غير متوفر',
+            ]
+            : [
+                'clinic' => 'Medical Clinic',
+                'title' => 'Medicines Prescription',
+                'patientInfo' => 'Client Information',
+                'doctorInfo' => 'Doctor Information',
+                'name' => 'Name',
+                'email' => 'Email',
+                'phone' => 'Phone',
+                'whatsapp' => 'WhatsApp',
+                'dob' => 'Date of Birth',
+                'address' => 'Address',
+                'job' => 'Job',
+                'doctor' => 'Doctor',
+                'appointment' => 'Appointment',
+                'date' => 'Date',
+                'medicines' => 'Medicines',
+                'noMedicines' => 'No medicines recorded.',
+                'signature' => 'Doctor Signature',
+                'na' => 'N/A',
+            ];
+
+        $align = $isArabic ? 'R' : 'L';
+
+        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator('Medical Clinic System');
+        $pdf->SetAuthor('Dr. ' . $reservation->doctor->name);
+        $pdf->SetTitle($labels['title']);
+        $pdf->SetSubject($labels['title'] . ' - ' . $reservation->client->name);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->setRTL($isArabic);
+        $pdf->SetMargins(15, 20, 15);
+        $pdf->SetAutoPageBreak(true, 25);
+        $pdf->AddPage();
+        $pdf->SetFont('dejavusans', '', 12);
+
+        $pdf->SetFillColor(44, 90, 160);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetFont('dejavusans', 'B', 16);
+        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Ln(4);
+        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
+        $pdf->Ln(6);
+
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['patientInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $this->pdfLabelValue($pdf, $labels['name'], $reservation->client->name, $align);
+        $this->pdfLabelValue($pdf, $labels['email'], $reservation->client->email ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['phone'], $reservation->client->phone ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['whatsapp'], $reservation->client->whatsapp_number ?: $labels['na'], $align);
+        if ($reservation->client->date_of_birth) {
+            $this->pdfLabelValue($pdf, $labels['dob'], \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), $align);
+        }
+        if ($reservation->client->address) {
+            $this->pdfLabelValue($pdf, $labels['address'], $reservation->client->address, $align);
+        }
+        if ($reservation->client->job) {
+            $this->pdfLabelValue($pdf, $labels['job'], $reservation->client->job, $align);
+        }
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['doctorInfo'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $this->pdfLabelValue($pdf, $labels['doctor'], 'Dr. ' . $reservation->doctor->name, $align);
+        $this->pdfLabelValue($pdf, $labels['email'], $reservation->doctor->email ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['appointment'], \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y H:i'), $align);
+        $this->pdfLabelValue($pdf, $labels['date'], now()->format('M d, Y H:i'), $align);
+
+        $pdf->Ln(6);
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels['medicines'], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 11);
+        $pdf->MultiCell(0, 8, $reservation->treatment ?: $labels['noMedicines'], 1, $align);
+
+        $pdf->Ln(14);
+        $pdf->SetFont('dejavusans', '', 10);
+        $pdf->Cell(0, 6, $labels['signature'] . ': Dr. ' . $reservation->doctor->name, 0, 1, $align);
+        $pdf->Cell(0, 6, str_repeat('_', 40), 0, 1, $align);
+
+        $filePrefix = $isArabic ? 'medicines-prescription-ar' : 'medicines-prescription-en';
+        $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
+
+        return response($pdf->Output($fileName, 'S'))
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
     private function formatChronicIllnesses(array $illnesses, bool $isArabic): string
     {
         $options = config('client.chronic_illnesses', []);
@@ -682,5 +992,11 @@ class ReservationController extends Controller
         }, $illnesses);
 
         return implode($isArabic ? '، ' : ', ', $labels);
+    }
+
+    private function pdfLabelValue(TCPDF $pdf, string $label, string $value, string $align): void
+    {
+        $pdf->Cell(50, 6, $label . ':', 0, 0, $align);
+        $pdf->MultiCell(0, 6, $value, 0, $align);
     }
 }

@@ -61,7 +61,9 @@ class ClientController extends Controller
             ? $user->parent_doctor_id
             : $this->requireDoctorId($request);
 
-        $request->validate($this->clientRules());
+        $this->normalizeClientPhoneInputs($request);
+
+        $request->validate($this->clientRules($doctorId));
 
         $client = Client::create([
             ...$this->clientPayload($request),
@@ -98,19 +100,28 @@ class ClientController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $request->validate($this->clientRules($client));
+        $this->normalizeClientPhoneInputs($request);
+
+        $request->validate($this->clientRules($primaryDoctorId, $client));
 
         $client->update($this->clientPayload($request));
 
         return response()->json($client);
     }
 
-    private function clientRules(?Client $client = null): array
+    private function clientRules(int $doctorId, ?Client $client = null): array
     {
         return [
             'name' => 'required|string|max:255',
             'email' => ['nullable', 'email', Rule::unique('clients', 'email')->ignore($client?->id)],
-            'phone' => 'required|string|max:20',
+            'phone' => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('clients', 'phone')
+                    ->where(fn ($query) => $query->where('doctor_id', $doctorId))
+                    ->ignore($client?->id),
+            ],
             'whatsapp_number' => 'nullable|string|max:20',
             'date_of_birth' => 'nullable|date',
             'height' => 'nullable|numeric|min:0|max:300',
@@ -122,6 +133,45 @@ class ClientController extends Controller
             'chronic_illnesses.*' => ['string', Rule::in(Client::chronicIllnessOptions())],
             'blood_type' => ['nullable', Rule::in(Client::bloodTypeOptions())],
         ];
+    }
+
+    private function normalizeClientPhoneInputs(Request $request): void
+    {
+        $request->merge([
+            'phone' => $this->normalizePhoneNumber(
+                $request->input('phone'),
+                $request->input('phone_country_code') ?: $request->input('country_code')
+            ),
+            'whatsapp_number' => $this->normalizePhoneNumber(
+                $request->input('whatsapp_number'),
+                $request->input('whatsapp_country_code') ?: $request->input('country_code')
+            ),
+        ]);
+    }
+
+    private function normalizePhoneNumber($number, $countryCode = null): ?string
+    {
+        if (!filled($number)) {
+            return null;
+        }
+
+        $rawNumber = trim((string) $number);
+        $digits = preg_replace('/\D+/', '', $rawNumber);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($rawNumber, '+')) {
+            return '+' . ltrim($digits, '0');
+        }
+
+        $prefixDigits = preg_replace('/\D+/', '', (string) $countryCode);
+        if ($prefixDigits) {
+            return '+' . ltrim($prefixDigits, '0') . ltrim($digits, '0');
+        }
+
+        return $digits;
     }
 
     private function clientPayload(Request $request): array
