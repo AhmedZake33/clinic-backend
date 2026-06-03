@@ -34,7 +34,9 @@ class ReservationController extends Controller
 
     public function index(Request $request)
     {
-        $doctorIds = $this->getDoctorIds($request);
+        $doctorIds = $request->boolean('own_only')
+            ? [$this->requireDoctorId($request)]
+            : $this->getDoctorIds($request);
 
         $query = Reservation::with(['client', 'doctor', 'creator', 'archive.children'])
             ->whereIn('doctor_id', $doctorIds);
