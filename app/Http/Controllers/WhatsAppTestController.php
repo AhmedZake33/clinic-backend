@@ -16,7 +16,7 @@ class WhatsAppTestController extends Controller
         if (! $request->filled('chat_id') || ! $request->filled('message')) {
             return response()->json([
                 'message' => 'Add chat_id and message query parameters to send a WhatsApp test message.',
-                'example' => url('/test-whatsapp') . '?chat_id=201234567890&message=Test%20message',
+                'example' => url('/test-whatsapp') . '?chat_id=%2B201234567890&message=Test%20message',
             ]);
         }
 
