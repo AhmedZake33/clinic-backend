@@ -35,4 +35,19 @@ return [
         ],
     ],
 
+    'whatsapp' => [
+        'driver' => env('WHATSAPP_DRIVER', 'wapilot'),
+        'reservation_reminder_message' => env(
+            'WHATSAPP_RESERVATION_REMINDER_MESSAGE',
+            'Hello {client}, this is a reminder for your appointment with Dr. {doctor} on {date} at {time}.'
+        ),
+
+        'wapilot' => [
+            'base_url' => env('WAPILOT_BASE_URL', 'https://api.wapilot.net'),
+            'instance_id' => env('WAPILOT_INSTANCE_ID'),
+            'token' => env('WAPILOT_TOKEN'),
+            'timeout' => (int) env('WAPILOT_TIMEOUT', 10),
+        ],
+    ],
+
 ];

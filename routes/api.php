@@ -20,6 +20,7 @@ use App\Http\Controllers\FeatureController;
 use App\Http\Controllers\DoctorServiceController;
 use App\Http\Controllers\ReservationServiceController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\WhatsAppTestController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -109,9 +110,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // Permissions are managed by admin; no doctor-scoped permissions route
     });
     
-    // Assistant and sub-doctor can create and confirm reservations
-    Route::middleware(['role:assistant,sub-doctor'])->group(function () {
+    // Doctor, assistant and sub-doctor can create reservations
+    Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::post('/reservations', [ReservationController::class, 'store']);
+    });
+
+    // Assistant and sub-doctor can confirm reservations
+    Route::middleware(['role:assistant,sub-doctor'])->group(function () {
         Route::post('/reservations/{reservation}/confirm', [ReservationController::class, 'confirm']);
     });
 
@@ -149,6 +154,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/waiting-queue', [CheckInController::class, 'waitingQueue']);
         Route::post('/waiting-queue/reorder', [CheckInController::class, 'reorderWaitingQueue']);
         Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary']);
+        Route::post('/whatsapp/test-message', [WhatsAppTestController::class, 'send']);
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
