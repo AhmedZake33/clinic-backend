@@ -15,4 +15,9 @@ class WhatsAppException extends RuntimeException
     {
         return new self("Unsupported WhatsApp driver [{$driver}].");
     }
+
+    public static function unsupportedFeature(string $feature): self
+    {
+        return new self("WhatsApp provider does not support [{$feature}] in this implementation.");
+    }
 }

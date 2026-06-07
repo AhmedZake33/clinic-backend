@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/waiting-queue/reorder', [CheckInController::class, 'reorderWaitingQueue']);
         Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary']);
         Route::post('/whatsapp/test-message', [WhatsAppTestController::class, 'send']);
+        Route::post('/whatsapp/test-image', [WhatsAppTestController::class, 'sendImage']);
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {

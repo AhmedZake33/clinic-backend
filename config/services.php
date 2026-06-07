@@ -48,6 +48,13 @@ return [
             'token' => env('WAPILOT_TOKEN'),
             'timeout' => (int) env('WAPILOT_TIMEOUT', 10),
         ],
+
+        'tafratech' => [
+            'base_url' => env('TAFRATECH_WHATSAPP_BASE_URL', 'https://whatsapp.tafratech.com'),
+            'token' => env('TAFRATECH_WHATSAPP_TOKEN'),
+            'timeout' => (int) env('TAFRATECH_WHATSAPP_TIMEOUT', 10),
+            'reservation_reminder_message' => env('TAFRATECH_MESSAGE'),
+        ],
     ],
 
 ];

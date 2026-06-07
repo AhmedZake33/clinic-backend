@@ -39,6 +39,40 @@ class WhatsAppTestController extends Controller
         return $this->sendValidated($validated, $sender);
     }
 
+    public function sendImage(Request $request, WhatsAppMessageSender $sender): JsonResponse
+    {
+        $validated = $request->validate([
+            'chat_id' => ['required', 'string', 'max:50'],
+            'image_url' => ['required_without:imageUrl', 'url', 'max:2048'],
+            'imageUrl' => ['required_without:image_url', 'url', 'max:2048'],
+            'caption' => ['nullable', 'string', 'max:1024'],
+        ]);
+
+        try {
+            $result = $sender->sendImage(
+                $validated['chat_id'],
+                $validated['image_url'] ?? $validated['imageUrl'],
+                $validated['caption'] ?? null,
+            );
+        } catch (WhatsAppException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], 500);
+        } catch (ConnectionException) {
+            return response()->json([
+                'message' => 'Failed to connect to WhatsApp provider.',
+            ], 503);
+        }
+
+        return response()->json([
+            'message' => $result['successful']
+                ? 'WhatsApp image sent.'
+                : 'WhatsApp provider rejected the image.',
+            'provider' => config('services.whatsapp.driver'),
+            'result' => $result,
+        ], $result['successful'] ? 200 : 502);
+    }
+
     private function sendValidated(array $validated, WhatsAppMessageSender $sender): JsonResponse
     {
         try {

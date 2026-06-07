@@ -119,6 +119,16 @@ class SendReservationWhatsAppReminders extends Command
             '{time}' => $appointment->format('h:i A'),
         ];
 
-        return strtr(config('services.whatsapp.reservation_reminder_message'), $replacements);
+        return strtr($this->messageTemplate(), $replacements);
+    }
+
+    private function messageTemplate(): string
+    {
+        $driver = config('services.whatsapp.driver', 'wapilot');
+        $driverTemplate = config("services.whatsapp.{$driver}.reservation_reminder_message");
+
+        return filled($driverTemplate)
+            ? $driverTemplate
+            : config('services.whatsapp.reservation_reminder_message');
     }
 }

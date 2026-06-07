@@ -8,11 +8,10 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
+class TafratechWhatsAppMessageSender implements WhatsAppMessageSender
 {
     public function __construct(
         private readonly string $baseUrl,
-        private readonly ?string $instanceId,
         private readonly ?string $token,
         private readonly int $timeout = 10,
     ) {
@@ -23,29 +22,41 @@ class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
      */
     public function sendText(string $chatId, string $message, array $options = []): array
     {
+        return $this->postMessage('/api/send-message', [
+            'phone' => $this->normalizeEgyptianMobilePhone($chatId),
+            'message' => $message,
+        ], $chatId, 'Tafratech message');
+    }
+
+    /**
+     * @throws ConnectionException
+     */
+    public function sendImage(string $chatId, string $imageUrl, ?string $caption = null, array $options = []): array
+    {
+        return $this->postMessage('/api/send-image', array_filter([
+            'phone' => $this->normalizeEgyptianMobilePhone($chatId),
+            'imageUrl' => $imageUrl,
+            'caption' => $caption,
+        ], static fn ($value) => $value !== null && $value !== ''), $chatId, 'Tafratech image');
+    }
+
+    /**
+     * @throws ConnectionException
+     */
+    private function postMessage(string $path, array $payload, string $originalChatId, string $logName): array
+    {
         $this->ensureConfigured();
-
-        $originalChatId = $chatId;
-        $chatId = $this->normalizeEgyptianMobileChatId($chatId);
-
-        $payload = array_filter([
-            'chat_id' => $chatId,
-            'text' => $message,
-            'priority' => $options['priority'] ?? null,
-            'send_at' => $options['send_at'] ?? null,
-        ], static fn ($value) => $value !== null && $value !== '');
 
         try {
             $response = Http::timeout($this->timeout)
                 ->acceptJson()
                 ->asJson()
-                ->withHeaders(['token' => $this->token])
-                ->post($this->endpoint("/{$this->instanceId}/send-message"), $payload);
+                ->withToken($this->token)
+                ->post($this->endpoint($path), $payload);
         } catch (ConnectionException $exception) {
-            Log::channel('whatsapp')->error('WAPilot connection failed.', [
+            Log::channel('whatsapp')->error("{$logName} connection failed.", [
                 'base_url' => $this->baseUrl,
-                'instance_id' => $this->instanceId,
-                'chat_id' => $chatId,
+                'phone' => $payload['phone'] ?? null,
                 'original_chat_id' => $originalChatId,
                 'error' => $exception->getMessage(),
             ]);
@@ -54,10 +65,9 @@ class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
         }
 
         if (! $response->successful()) {
-            Log::channel('whatsapp')->warning('WAPilot message rejected.', [
+            Log::channel('whatsapp')->warning("{$logName} rejected.", [
                 'base_url' => $this->baseUrl,
-                'instance_id' => $this->instanceId,
-                'chat_id' => $chatId,
+                'phone' => $payload['phone'] ?? null,
                 'original_chat_id' => $originalChatId,
                 'status' => $response->status(),
                 'response' => $response->json() ?? $response->body(),
@@ -71,14 +81,9 @@ class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
         ];
     }
 
-    public function sendImage(string $chatId, string $imageUrl, ?string $caption = null, array $options = []): array
-    {
-        throw WhatsAppException::unsupportedFeature('send-image');
-    }
-
     private function ensureConfigured(): void
     {
-        if (blank($this->instanceId) || blank($this->token)) {
+        if (blank($this->token)) {
             throw WhatsAppException::providerNotConfigured();
         }
     }
@@ -88,16 +93,12 @@ class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
         return rtrim($this->baseUrl, '/') . '/' . ltrim($path, '/');
     }
 
-    private function normalizeEgyptianMobileChatId(string $chatId): string
+    private function normalizeEgyptianMobilePhone(string $phone): string
     {
-        if (str_contains($chatId, '@')) {
-            return trim($chatId);
-        }
-
-        $digits = preg_replace('/\D/', '', $chatId) ?? '';
+        $digits = preg_replace('/\D/', '', $phone) ?? '';
 
         if ($digits === '') {
-            return trim($chatId);
+            return trim($phone);
         }
 
         if (str_starts_with($digits, '0020')) {
@@ -112,6 +113,6 @@ class WapilotWhatsAppMessageSender implements WhatsAppMessageSender
             $digits = '20' . ltrim($digits, '0');
         }
 
-        return '+' . $digits;
+        return $digits;
     }
 }
