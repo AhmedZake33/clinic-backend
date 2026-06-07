@@ -32,11 +32,18 @@ class ClientController extends Controller
 
         // Optional search by name/email/phone
         if ($search = $request->query('search')) {
-            $query->where(function ($q) use ($search) {
+            $phoneSearches = $this->phoneSearchTerms($search);
+
+            $query->where(function ($q) use ($search, $phoneSearches) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('whatsapp_number', 'like', "%{$search}%");
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('whatsapp_number', 'like', "%{$search}%");
+
+                foreach ($phoneSearches as $term) {
+                    $q->orWhere('phone', 'like', "%{$term}%")
+                        ->orWhere('whatsapp_number', 'like', "%{$term}%");
+                }
             });
         }
 
@@ -172,6 +179,33 @@ class ClientController extends Controller
         }
 
         return $digits;
+    }
+
+    private function phoneSearchTerms(string $search): array
+    {
+        $digits = preg_replace('/\D+/', '', $search) ?? '';
+
+        if ($digits === '') {
+            return [];
+        }
+
+        $terms = [$digits];
+
+        if (str_starts_with($digits, '0020')) {
+            $terms[] = substr($digits, 2);
+        }
+
+        if (str_starts_with($digits, '20')) {
+            $terms[] = '0' . substr($digits, 2);
+            $terms[] = substr($digits, 2);
+        } elseif (str_starts_with($digits, '0')) {
+            $terms[] = '20' . substr($digits, 1);
+        } else {
+            $terms[] = '20' . ltrim($digits, '0');
+            $terms[] = '0' . ltrim($digits, '0');
+        }
+
+        return array_values(array_unique(array_filter($terms)));
     }
 
     private function clientPayload(Request $request): array
