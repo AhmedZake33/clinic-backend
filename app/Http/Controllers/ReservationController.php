@@ -83,6 +83,7 @@ class ReservationController extends Controller
             'amount' => 'required|numeric|min:0',
             'paid' => 'nullable|numeric|min:0',
             'payment_method' => 'required|in:cash,card,transfer,other',
+            'source_reservation_id' => 'nullable|exists:reservations,id',
         ]);
 
         // Use the tenant doctor (doctor or sub-doctor)
@@ -149,6 +150,21 @@ class ReservationController extends Controller
         $this->logReservationAction($reservation, $request, 'created', 'Reservation created', [
             'appointment_date' => $reservation->appointment_date,
         ]);
+
+        if ($request->filled('source_reservation_id')) {
+            $sourceReservation = Reservation::query()
+                ->where('id', $request->source_reservation_id)
+                ->where('client_id', $request->client_id)
+                ->whereIn('doctor_id', $callerDoctorIds)
+                ->first();
+
+            if ($sourceReservation) {
+                $this->logReservationAction($sourceReservation, $request, 'future_reservation_created', 'Future reservation created', [
+                    'new_reservation_id' => $reservation->id,
+                    'appointment_date' => $reservation->appointment_date,
+                ]);
+            }
+        }
 
         $reservation->load(['client', 'doctor', 'creator']);
 

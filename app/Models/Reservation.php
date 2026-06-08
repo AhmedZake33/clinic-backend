@@ -32,6 +32,7 @@ class Reservation extends Model
         'lab_notes',
         'completed_at',
         'checked_in_at',
+        'whatsapp_reminder_sent_at',
         'waiting_number',
     ];
 
@@ -39,6 +40,7 @@ class Reservation extends Model
         'appointment_date' => 'datetime:Y-m-d H:i:s',
         'completed_at' => 'datetime:Y-m-d H:i:s',
         'checked_in_at' => 'datetime:Y-m-d H:i:s',
+        'whatsapp_reminder_sent_at' => 'datetime:Y-m-d H:i:s',
         'requires_xray' => 'boolean',
         'requires_lab' => 'boolean',
         'waiting_number' => 'integer',
