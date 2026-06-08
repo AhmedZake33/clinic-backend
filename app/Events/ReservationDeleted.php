@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\BroadcastsReservationToResponsibleUsers;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class ReservationDeleted implements ShouldBroadcastNow
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use BroadcastsReservationToResponsibleUsers, Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $reservationId;
     public int $doctorId;
@@ -36,10 +37,7 @@ class ReservationDeleted implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('doctor.' . $this->doctorId),
-            new PrivateChannel('assistant.reservations'),
-        ];
+        return $this->reservationChannelsForDoctor($this->doctorId);
     }
 
     /**

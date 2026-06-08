@@ -24,9 +24,9 @@ Broadcast::channel('doctor.{doctorId}', function ($user, $doctorId) {
     return false;
 });
 
-// Private channel for assistants (and sub-doctors acting as staff) to receive all reservation updates
-Broadcast::channel('assistant.reservations', function ($user) {
-    return in_array($user->role, ['assistant', 'sub-doctor']);
+// Private channel for assistants to receive reservation updates for their assigned doctor only.
+Broadcast::channel('assistant.reservations.{doctorId}', function ($user, $doctorId) {
+    return $user->role === 'assistant' && (int) $user->doctor_id === (int) $doctorId;
 });
 
 // Public channel for all reservation updates (authenticated users only)

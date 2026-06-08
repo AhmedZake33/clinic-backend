@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\BroadcastsReservationToResponsibleUsers;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -11,7 +12,7 @@ use Illuminate\Queue\SerializesModels;
 
 class QueueReordered implements ShouldBroadcastNow
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use BroadcastsReservationToResponsibleUsers, Dispatchable, InteractsWithSockets, SerializesModels;
 
     public int $doctorId;
     public array $orderedIds;
@@ -24,10 +25,7 @@ class QueueReordered implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('doctor.' . $this->doctorId),
-            new PrivateChannel('assistant.reservations'),
-        ];
+        return $this->reservationChannelsForDoctor($this->doctorId);
     }
 
     public function broadcastWith(): array
