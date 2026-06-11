@@ -35,6 +35,7 @@ class SubDoctorController extends Controller
             'email' => 'required|email|unique:users,email',
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
+            'specialization' => 'nullable|string|max:255',
             'password' => 'nullable|string|min:6',
         ]);
 
@@ -56,6 +57,7 @@ class SubDoctorController extends Controller
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
             'whatsapp_number' => $data['whatsapp_number'] ?? null,
+            'specialization' => $data['specialization'] ?? null,
             'password' => Hash::make($plainPassword),
             'role' => 'sub-doctor',
             'parent_doctor_id' => $doctor->id,
@@ -84,6 +86,7 @@ class SubDoctorController extends Controller
             'email' => 'sometimes|required|email|unique:users,email,'.$user->id,
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
+            'specialization' => 'nullable|string|max:255',
             'password' => 'nullable|string|min:6',
             'is_active' => 'boolean',
         ]);
@@ -92,6 +95,7 @@ class SubDoctorController extends Controller
         if (isset($data['email'])) $user->email = $data['email'];
         if (array_key_exists('phone', $data)) $user->phone = $data['phone'];
         if (array_key_exists('whatsapp_number', $data)) $user->whatsapp_number = $data['whatsapp_number'];
+        if (array_key_exists('specialization', $data)) $user->specialization = $data['specialization'];
         if (!empty($data['password'])) $user->password = Hash::make($data['password']);
         if (isset($data['is_active'])) $user->is_active = $data['is_active'];
         $user->save();

@@ -30,6 +30,7 @@ class AdminController extends Controller
                     'email' => $doctor->email,
                     'phone' => $doctor->phone,
                     'whatsapp_number' => $doctor->whatsapp_number,
+                    'specialization' => $doctor->specialization,
                     'subscription_start' => $doctor->subscription_start,
                     'subscription_end' => $doctor->subscription_end,
                     'is_active' => $doctor->is_active,
@@ -61,6 +62,7 @@ class AdminController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
+            'specialization' => 'nullable|string|max:255',
             'password' => 'required|string|min:8',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
@@ -80,6 +82,7 @@ class AdminController extends Controller
             'email' => $request->email,
             'phone' => $request->phone,
             'whatsapp_number' => $request->whatsapp_number,
+            'specialization' => $request->specialization,
             'password' => Hash::make($request->password),
             'role' => 'doctor',
             'subscription_start' => $request->subscription_start,
@@ -117,6 +120,7 @@ class AdminController extends Controller
             'email' => $doctor->email,
             'phone' => $doctor->phone,
             'whatsapp_number' => $doctor->whatsapp_number,
+            'specialization' => $doctor->specialization,
             'subscription_start' => $doctor->subscription_start,
             'subscription_end' => $doctor->subscription_end,
             'is_active' => $doctor->is_active,
@@ -162,6 +166,7 @@ class AdminController extends Controller
             'email' => ['sometimes', 'required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($doctor->id)],
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
+            'specialization' => 'nullable|string|max:255',
             'password' => 'nullable|string|min:8',
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
@@ -177,7 +182,7 @@ class AdminController extends Controller
         }
 
         $updateData = $request->only([
-            'name', 'email', 'phone', 'whatsapp_number', 'subscription_start', 'subscription_end',
+            'name', 'email', 'phone', 'whatsapp_number', 'specialization', 'subscription_start', 'subscription_end',
             'is_active', 'subscription_plan', 'subscription_amount', 'notes', 'max_sub_doctors'
         ]);
 

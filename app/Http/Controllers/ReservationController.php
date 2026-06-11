@@ -32,6 +32,130 @@ class ReservationController extends Controller
         ]);
     }
 
+    private function printSettingsFor(Reservation $reservation, array $labels): array
+    {
+        $doctor = $reservation->doctor;
+
+        return [
+            'clinic_name' => $doctor?->print_clinic_name ?: $labels['clinic'],
+            'clinic_phone' => $doctor?->print_clinic_phone,
+            'clinic_address' => $doctor?->print_clinic_address,
+            'header_text' => $doctor?->print_header_text,
+            'footer_text' => $doctor?->print_footer_text,
+            'color' => $this->hexColorToRgb($doctor?->print_primary_color ?: '#2C5AA0'),
+            'clinic_name_position' => $doctor?->print_clinic_name_position ?: 'center',
+            'patient_info_position' => $doctor?->print_patient_info_position ?: 'top',
+        ];
+    }
+
+    private function hexColorToRgb(string $hex): array
+    {
+        $hex = ltrim($hex, '#');
+
+        if (!preg_match('/^[0-9A-Fa-f]{6}$/', $hex)) {
+            return [44, 90, 160];
+        }
+
+        return [
+            hexdec(substr($hex, 0, 2)),
+            hexdec(substr($hex, 2, 2)),
+            hexdec(substr($hex, 4, 2)),
+        ];
+    }
+
+    private function drawPrintHeader(TCPDF $pdf, array $settings, string $title): void
+    {
+        [$red, $green, $blue] = $settings['color'];
+        $headerAlign = $this->pdfAlign($settings['clinic_name_position'] ?? 'center');
+
+        $pdf->SetFillColor($red, $green, $blue);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetFont('dejavusans', 'B', 16);
+        $pdf->Cell(0, 12, $settings['clinic_name'], 0, 1, $headerAlign, 1);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $infoLines = array_filter([
+            $settings['clinic_phone'],
+            $settings['clinic_address'],
+            $settings['header_text'],
+        ]);
+
+        if ($infoLines) {
+            $pdf->Ln(2);
+            $pdf->SetFont('dejavusans', '', 9);
+            foreach ($infoLines as $line) {
+                $pdf->MultiCell(0, 5, $line, 0, $headerAlign);
+            }
+        }
+
+        $pdf->Ln(4);
+        $pdf->SetFont('dejavusans', 'B', 16);
+        $pdf->Cell(0, 10, $title, 0, 1, 'C');
+        $pdf->Ln(4);
+    }
+
+    private function pdfAlign(string $position): string
+    {
+        return match ($position) {
+            'left' => 'L',
+            'right' => 'R',
+            default => 'C',
+        };
+    }
+
+    private function shouldDrawPatientInfo(array $settings, string $position): bool
+    {
+        return ($settings['patient_info_position'] ?? 'top') === $position;
+    }
+
+    private function drawPatientInfo(
+        TCPDF $pdf,
+        Reservation $reservation,
+        array $labels,
+        string $titleKey,
+        string $align,
+        array $options = []
+    ): void {
+        $pdf->SetFont('dejavusans', 'B', 12);
+        $pdf->Cell(0, 8, $labels[$titleKey], 0, 1, $align, 1);
+        $pdf->SetFont('dejavusans', '', 10);
+        $this->pdfLabelValue($pdf, $labels['name'], $reservation->client->name, $align);
+        $this->pdfLabelValue($pdf, $labels['email'], $reservation->client->email ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['phone'], $reservation->client->phone ?: $labels['na'], $align);
+        $this->pdfLabelValue($pdf, $labels['whatsapp'], $reservation->client->whatsapp_number ?: $labels['na'], $align);
+
+        if (($options['dob'] ?? false) && $reservation->client->date_of_birth) {
+            $this->pdfLabelValue($pdf, $labels['dob'], \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), $align);
+        }
+
+        if (($options['address'] ?? false) && $reservation->client->address) {
+            $this->pdfLabelValue($pdf, $labels['address'], $reservation->client->address, $align);
+        }
+
+        if (($options['job'] ?? false) && $reservation->client->job) {
+            $this->pdfLabelValue($pdf, $labels['job'], $reservation->client->job, $align);
+        }
+
+        if (($options['chronic'] ?? false) && $reservation->client->chronic_illnesses) {
+            $pdf->Cell(50, 6, $labels['chronicIllnesses'] . ':', 0, 0, $align);
+            $pdf->MultiCell(0, 6, $this->formatChronicIllnesses($reservation->client->chronic_illnesses, $options['isArabic'] ?? false), 0, $align);
+        }
+
+        $pdf->Ln(4);
+    }
+
+    private function drawPrintFooter(TCPDF $pdf, array $settings, string $fallbackText = ''): void
+    {
+        $footer = $settings['footer_text'] ?: $fallbackText;
+        if (!$footer) {
+            return;
+        }
+
+        $pdf->Ln(5);
+        $pdf->SetFont('dejavusans', '', 8);
+        $pdf->MultiCell(0, 6, $footer, 0, 'C');
+    }
+
     public function index(Request $request)
     {
         $doctorIds = $request->boolean('own_only')
@@ -484,10 +608,10 @@ class ReservationController extends Controller
 
     public function generatePrescription(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
         // Only the assigned doctor (or their assistant) can generate prescription
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'You can only generate prescriptions for your own reservations'], 403);
         }
 
@@ -536,6 +660,7 @@ class ReservationController extends Controller
                 'labRequired' => 'يتطلب تحاليل مختبرية',
                 'xrayNotes' => 'ملاحظات الأشعة',
                 'labNotes' => 'ملاحظات التحاليل',
+                'na' => 'غير متوفر',
             ]
             : [
                 'clinic' => 'Medical Clinic',
@@ -570,9 +695,11 @@ class ReservationController extends Controller
                 'labRequired' => 'Requires Lab Tests',
                 'xrayNotes' => 'X-Ray Notes',
                 'labNotes' => 'Lab Notes',
+                'na' => 'N/A',
             ];
 
         $align = $isArabic ? 'R' : 'L';
+        $printSettings = $this->printSettingsFor($reservation, $labels);
 
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('Medical Clinic System');
@@ -587,46 +714,20 @@ class ReservationController extends Controller
         $pdf->AddPage();
         $pdf->SetFont('dejavusans', '', 12);
 
-        $pdf->SetFillColor(44, 90, 160);
-        $pdf->SetTextColor(255, 255, 255);
-        $pdf->SetFont('dejavusans', 'B', 16);
-        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
-        $pdf->SetTextColor(0, 0, 0);
-        $pdf->Ln(4);
-        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
-        $pdf->Ln(4);
+        $this->drawPrintHeader($pdf, $printSettings, $labels['title']);
 
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, $labels['patientInfo'], 0, 1, $align, 1);
-        $pdf->SetFont('dejavusans', '', 10);
-        $pdf->Cell(50, 6, $labels['name'] . ':', 0, 0, $align);
-        $pdf->Cell(0, 6, $reservation->client->name, 0, 1, $align);
-        $pdf->Cell(50, 6, $labels['email'] . ':', 0, 0, $align);
-        $pdf->Cell(0, 6, $reservation->client->email, 0, 1, $align);
-        $pdf->Cell(50, 6, $labels['phone'] . ':', 0, 0, $align);
-        $pdf->Cell(0, 6, $reservation->client->phone, 0, 1, $align);
-        if ($reservation->client->whatsapp_number) {
-            $pdf->Cell(50, 6, $labels['whatsapp'] . ':', 0, 0, $align);
-            $pdf->Cell(0, 6, $reservation->client->whatsapp_number, 0, 1, $align);
-        }
-        if ($reservation->client->date_of_birth) {
-            $pdf->Cell(50, 6, $labels['dob'] . ':', 0, 0, $align);
-            $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), 0, 1, $align);
-        }
-        if ($reservation->client->address) {
-            $pdf->Cell(50, 6, $labels['address'] . ':', 0, 0, $align);
-            $pdf->MultiCell(0, 6, $reservation->client->address, 0, $align);
-        }
-        if ($reservation->client->job) {
-            $pdf->Cell(50, 6, $labels['job'] . ':', 0, 0, $align);
-            $pdf->Cell(0, 6, $reservation->client->job, 0, 1, $align);
-        }
-        if (!empty($reservation->client->chronic_illnesses)) {
-            $pdf->Cell(50, 6, $labels['chronicIllnesses'] . ':', 0, 0, $align);
-            $pdf->MultiCell(0, 6, $this->formatChronicIllnesses($reservation->client->chronic_illnesses, $isArabic), 0, $align);
+        $patientOptions = [
+            'dob' => true,
+            'address' => true,
+            'job' => true,
+            'chronic' => true,
+            'isArabic' => $isArabic,
+        ];
+
+        if ($this->shouldDrawPatientInfo($printSettings, 'top')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
         }
 
-        $pdf->Ln(4);
         $pdf->SetFont('dejavusans', 'B', 12);
         $pdf->Cell(0, 8, $labels['doctorInfo'], 0, 1, $align, 1);
         $pdf->SetFont('dejavusans', '', 10);
@@ -634,6 +735,11 @@ class ReservationController extends Controller
         $pdf->Cell(0, 6, 'Dr. ' . $reservation->doctor->name, 0, 1, $align);
         $pdf->Cell(50, 6, $labels['date'] . ':', 0, 0, $align);
         $pdf->Cell(0, 6, \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y H:i'), 0, 1, $align);
+        $pdf->Ln(4);
+
+        if ($this->shouldDrawPatientInfo($printSettings, 'after_doctor')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
+        }
 
         $pdf->Ln(4);
         $pdf->SetFont('dejavusans', 'B', 12);
@@ -692,13 +798,16 @@ class ReservationController extends Controller
             $pdf->MultiCell(0, 6, $reservation->client->medical_history, 1, $align);
         }
 
+        if ($this->shouldDrawPatientInfo($printSettings, 'bottom')) {
+            $pdf->Ln(4);
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
+        }
+
         $pdf->Ln(12);
         $pdf->SetFont('dejavusans', '', 10);
         $pdf->Cell(0, 6, $labels['signature'] . ': Dr. ' . $reservation->doctor->name, 0, 1, $align);
         $pdf->Cell(0, 6, str_repeat('_', 40), 0, 1, $align);
-        $pdf->Ln(5);
-        $pdf->SetFont('dejavusans', $isArabic ? '' : 'I', 8);
-        $pdf->MultiCell(0, 6, $labels['notes'], 0, 'C');
+        $this->drawPrintFooter($pdf, $printSettings, $labels['notes']);
 
         $filePrefix = $isArabic ? 'prescription-ar' : 'prescription-en';
         $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
@@ -710,9 +819,9 @@ class ReservationController extends Controller
 
     public function generateReservationDetailsPdf(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'You can only generate details for your own reservations'], 403);
         }
 
@@ -778,6 +887,7 @@ class ReservationController extends Controller
             ];
 
         $align = $isArabic ? 'R' : 'L';
+        $printSettings = $this->printSettingsFor($reservation, $labels);
 
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('Medical Clinic System');
@@ -791,22 +901,11 @@ class ReservationController extends Controller
         $pdf->SetAutoPageBreak(true, 25);
         $pdf->AddPage();
 
-        $pdf->SetFillColor(44, 90, 160);
-        $pdf->SetTextColor(255, 255, 255);
-        $pdf->SetFont('dejavusans', 'B', 16);
-        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
-        $pdf->SetTextColor(0, 0, 0);
-        $pdf->Ln(4);
-        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
-        $pdf->Ln(4);
+        $this->drawPrintHeader($pdf, $printSettings, $labels['title']);
 
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, $labels['clientInfo'], 0, 1, $align, 1);
-        $pdf->SetFont('dejavusans', '', 10);
-        $this->pdfLabelValue($pdf, $labels['name'], $reservation->client->name, $align);
-        $this->pdfLabelValue($pdf, $labels['email'], $reservation->client->email ?: $labels['na'], $align);
-        $this->pdfLabelValue($pdf, $labels['phone'], $reservation->client->phone ?: $labels['na'], $align);
-        $this->pdfLabelValue($pdf, $labels['whatsapp'], $reservation->client->whatsapp_number ?: $labels['na'], $align);
+        if ($this->shouldDrawPatientInfo($printSettings, 'top')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'clientInfo', $align);
+        }
 
         $pdf->Ln(4);
         $pdf->SetFont('dejavusans', 'B', 12);
@@ -818,6 +917,11 @@ class ReservationController extends Controller
         $this->pdfLabelValue($pdf, $labels['created'], \Carbon\Carbon::parse($reservation->created_at)->format('M d, Y H:i'), $align);
         if ($reservation->completed_at) {
             $this->pdfLabelValue($pdf, $labels['completedAt'], \Carbon\Carbon::parse($reservation->completed_at)->format('M d, Y H:i'), $align);
+        }
+        $pdf->Ln(4);
+
+        if ($this->shouldDrawPatientInfo($printSettings, 'after_doctor')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'clientInfo', $align);
         }
 
         $sections = [
@@ -860,6 +964,13 @@ class ReservationController extends Controller
             }
         }
 
+        if ($this->shouldDrawPatientInfo($printSettings, 'bottom')) {
+            $pdf->Ln(4);
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'clientInfo', $align);
+        }
+
+        $this->drawPrintFooter($pdf, $printSettings);
+
         $filePrefix = $isArabic ? 'reservation-details-ar' : 'reservation-details-en';
         $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';
 
@@ -870,9 +981,9 @@ class ReservationController extends Controller
 
     public function generateMedicinesPrescription(Request $request, Reservation $reservation)
     {
-        $doctorId = $this->requireDoctorId($request);
+        $doctorIds = $this->getDoctorIds($request);
 
-        if ($reservation->doctor_id !== $doctorId) {
+        if (!in_array($reservation->doctor_id, $doctorIds)) {
             return response()->json(['error' => 'You can only generate prescriptions for your own reservations'], 403);
         }
 
@@ -928,6 +1039,7 @@ class ReservationController extends Controller
             ];
 
         $align = $isArabic ? 'R' : 'L';
+        $printSettings = $this->printSettingsFor($reservation, $labels);
 
         $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         $pdf->SetCreator('Medical Clinic System');
@@ -942,30 +1054,16 @@ class ReservationController extends Controller
         $pdf->AddPage();
         $pdf->SetFont('dejavusans', '', 12);
 
-        $pdf->SetFillColor(44, 90, 160);
-        $pdf->SetTextColor(255, 255, 255);
-        $pdf->SetFont('dejavusans', 'B', 16);
-        $pdf->Cell(0, 12, $labels['clinic'], 0, 1, 'C', 1);
-        $pdf->SetTextColor(0, 0, 0);
-        $pdf->Ln(4);
-        $pdf->Cell(0, 10, $labels['title'], 0, 1, 'C');
-        $pdf->Ln(6);
+        $this->drawPrintHeader($pdf, $printSettings, $labels['title']);
 
-        $pdf->SetFont('dejavusans', 'B', 12);
-        $pdf->Cell(0, 8, $labels['patientInfo'], 0, 1, $align, 1);
-        $pdf->SetFont('dejavusans', '', 10);
-        $this->pdfLabelValue($pdf, $labels['name'], $reservation->client->name, $align);
-        $this->pdfLabelValue($pdf, $labels['email'], $reservation->client->email ?: $labels['na'], $align);
-        $this->pdfLabelValue($pdf, $labels['phone'], $reservation->client->phone ?: $labels['na'], $align);
-        $this->pdfLabelValue($pdf, $labels['whatsapp'], $reservation->client->whatsapp_number ?: $labels['na'], $align);
-        if ($reservation->client->date_of_birth) {
-            $this->pdfLabelValue($pdf, $labels['dob'], \Carbon\Carbon::parse($reservation->client->date_of_birth)->format('M d, Y'), $align);
-        }
-        if ($reservation->client->address) {
-            $this->pdfLabelValue($pdf, $labels['address'], $reservation->client->address, $align);
-        }
-        if ($reservation->client->job) {
-            $this->pdfLabelValue($pdf, $labels['job'], $reservation->client->job, $align);
+        $patientOptions = [
+            'dob' => true,
+            'address' => true,
+            'job' => true,
+        ];
+
+        if ($this->shouldDrawPatientInfo($printSettings, 'top')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
         }
 
         $pdf->Ln(4);
@@ -976,6 +1074,11 @@ class ReservationController extends Controller
         $this->pdfLabelValue($pdf, $labels['email'], $reservation->doctor->email ?: $labels['na'], $align);
         $this->pdfLabelValue($pdf, $labels['appointment'], \Carbon\Carbon::parse($reservation->appointment_date)->format('M d, Y H:i'), $align);
         $this->pdfLabelValue($pdf, $labels['date'], now()->format('M d, Y H:i'), $align);
+        $pdf->Ln(4);
+
+        if ($this->shouldDrawPatientInfo($printSettings, 'after_doctor')) {
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
+        }
 
         $pdf->Ln(6);
         $pdf->SetFont('dejavusans', 'B', 12);
@@ -983,10 +1086,16 @@ class ReservationController extends Controller
         $pdf->SetFont('dejavusans', '', 11);
         $pdf->MultiCell(0, 8, $reservation->treatment ?: $labels['noMedicines'], 1, $align);
 
+        if ($this->shouldDrawPatientInfo($printSettings, 'bottom')) {
+            $pdf->Ln(4);
+            $this->drawPatientInfo($pdf, $reservation, $labels, 'patientInfo', $align, $patientOptions);
+        }
+
         $pdf->Ln(14);
         $pdf->SetFont('dejavusans', '', 10);
         $pdf->Cell(0, 6, $labels['signature'] . ': Dr. ' . $reservation->doctor->name, 0, 1, $align);
         $pdf->Cell(0, 6, str_repeat('_', 40), 0, 1, $align);
+        $this->drawPrintFooter($pdf, $printSettings);
 
         $filePrefix = $isArabic ? 'medicines-prescription-ar' : 'medicines-prescription-en';
         $fileName = $filePrefix . '_' . $reservation->id . '_' . date('Y-m-d') . '.pdf';

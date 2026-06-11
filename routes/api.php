@@ -17,6 +17,8 @@ use App\Http\Controllers\ArchiveController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\SpecializationController;
 use App\Http\Controllers\FeatureController;
+use App\Http\Controllers\PrintSettingsController;
+use App\Http\Controllers\DoctorDiagnosisController;
 use App\Http\Controllers\DoctorServiceController;
 use App\Http\Controllers\ReservationServiceController;
 use App\Http\Controllers\TransactionController;
@@ -167,6 +169,8 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware(['role:doctor,sub-doctor'])->group(function () {
+        Route::get('/print-settings', [PrintSettingsController::class, 'show']);
+        Route::put('/print-settings', [PrintSettingsController::class, 'update']);
         Route::get('/reports/summary', [ReportController::class, 'summary']);
         Route::get('/reports/pdf', [ReportController::class, 'exportPdf']);
     });
@@ -239,6 +243,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/doctor-services', [DoctorServiceController::class, 'store']);
         Route::put('/doctor-services/{doctorService}', [DoctorServiceController::class, 'update']);
         Route::delete('/doctor-services/{doctorService}', [DoctorServiceController::class, 'destroy']);
+
+        Route::get('/doctor-diagnoses', [DoctorDiagnosisController::class, 'index']);
+        Route::post('/doctor-diagnoses', [DoctorDiagnosisController::class, 'store']);
+        Route::put('/doctor-diagnoses/{doctorDiagnosis}', [DoctorDiagnosisController::class, 'update']);
+        Route::delete('/doctor-diagnoses/{doctorDiagnosis}', [DoctorDiagnosisController::class, 'destroy']);
     });
 
     // Services on a specific reservation — doctor, sub-doctor & assistant (permission-protected)
@@ -247,6 +256,8 @@ Route::middleware('auth:sanctum')->group(function () {
             ->middleware('permission:reservation-services.view');
         Route::get('/reservations/{reservation}/doctor-services', [DoctorServiceController::class, 'forReservation'])
             ->middleware('permission:reservation-services.view');
+        Route::get('/doctors/{doctor}/doctor-diagnoses', [DoctorDiagnosisController::class, 'forDoctor']);
+        Route::get('/reservations/{reservation}/doctor-diagnoses', [DoctorDiagnosisController::class, 'forReservation']);
         Route::get('/reservations/{reservation}/services', [ReservationServiceController::class, 'index'])
             ->middleware('permission:reservation-services.view');
         Route::post('/reservations/{reservation}/services', [ReservationServiceController::class, 'store'])
