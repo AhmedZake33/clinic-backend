@@ -63,8 +63,7 @@ class AuthController extends Controller
             $user->load('doctor:id,name,email');
         }
 
-        // Load Spatie permissions
-        $permissions = $user->getAllPermissions()->pluck('name');
+        $permissions = $this->permissionsForResponse($user);
         $roles = $user->getRoleNames();
 
         return response()->json([
@@ -132,8 +131,7 @@ class AuthController extends Controller
             $user->load('doctor:id,name,email');
         }
 
-        // Load Spatie permissions
-        $permissions = $user->getAllPermissions()->pluck('name');
+        $permissions = $this->permissionsForResponse($user);
         $roles = $user->getRoleNames();
 
         return response()->json([
@@ -153,7 +151,7 @@ class AuthController extends Controller
         $user = $request->user();
 
         return response()->json([
-            'permissions' => $user->getAllPermissions()->pluck('name'),
+            'permissions' => $this->permissionsForResponse($user),
             'roles'       => $user->getRoleNames(),
         ]);
     }
@@ -184,8 +182,7 @@ class AuthController extends Controller
             $user->subscription_status = $user->getSubscriptionStatus();
         }
 
-        // Load Spatie permissions
-        $permissions = $user->getAllPermissions()->pluck('name');
+        $permissions = $this->permissionsForResponse($user);
         $roles = $user->getRoleNames();
 
         return response()->json([
@@ -214,6 +211,15 @@ class AuthController extends Controller
         $user->update(['password' => Hash::make($request->password)]);
 
         return response()->json(['message' => 'Password changed successfully.']);
+    }
+
+    private function permissionsForResponse(User $user)
+    {
+        if ($user->role === 'assistant') {
+            return $user->getDirectPermissions()->pluck('name');
+        }
+
+        return $user->getAllPermissions()->pluck('name');
     }
 
     /**

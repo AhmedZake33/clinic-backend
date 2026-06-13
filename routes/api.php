@@ -76,7 +76,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Client routes - accessible by doctor, assistant and sub-doctor
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::get('/clients/options', [ClientController::class, 'options']);
-        Route::apiResource('clients', ClientController::class);
+        Route::get('/clients', [ClientController::class, 'index'])->middleware('clinic.permission:assistant.view-clients');
+        Route::post('/clients', [ClientController::class, 'store'])->middleware('clinic.permission:assistant.create-clients');
+        Route::get('/clients/{client}', [ClientController::class, 'show'])->middleware('clinic.permission:assistant.view-clients');
+        Route::put('/clients/{client}', [ClientController::class, 'update'])->middleware('clinic.permission:assistant.edit-clients');
+        Route::delete('/clients/{client}', [ClientController::class, 'destroy'])->middleware('clinic.permission:assistant.delete-clients');
     });
 
     // Reservation routes - doctors list (tenant-scoped)
@@ -99,10 +103,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/doctors/{doctor}/holidays/{holiday}', [DoctorScheduleController::class, 'deleteHoliday']);
 
         // Assistant management
-        Route::get('/assistants', [AssistantController::class, 'index']);
-        Route::post('/assistants', [AssistantController::class, 'store']);
-        Route::put('/assistants/{assistant}', [AssistantController::class, 'update']);
-        Route::delete('/assistants/{assistant}', [AssistantController::class, 'destroy']);
+        Route::middleware(['role:doctor'])->group(function () {
+            Route::get('/assistants', [AssistantController::class, 'index']);
+            Route::get('/assistants/permissions', [AssistantController::class, 'permissions']);
+            Route::post('/assistants', [AssistantController::class, 'store']);
+            Route::put('/assistants/{assistant}', [AssistantController::class, 'update']);
+            Route::delete('/assistants/{assistant}', [AssistantController::class, 'destroy']);
+        });
 
         // Sub-doctors management
         Route::get('/doctor/sub-doctors', [\App\Http\Controllers\SubDoctorController::class, 'index']);
@@ -114,17 +121,20 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Doctor, assistant and sub-doctor can create reservations
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
-        Route::post('/reservations', [ReservationController::class, 'store']);
+        Route::post('/reservations', [ReservationController::class, 'store'])
+            ->middleware('clinic.permission:assistant.create-reservations');
     });
 
     // Assistant and sub-doctor can confirm reservations
     Route::middleware(['role:assistant,sub-doctor'])->group(function () {
-        Route::post('/reservations/{reservation}/confirm', [ReservationController::class, 'confirm']);
+        Route::post('/reservations/{reservation}/confirm', [ReservationController::class, 'confirm'])
+            ->middleware('clinic.permission:assistant.confirm-reservations');
     });
 
     // Doctor, assistant and sub-doctor can complete reservations
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
-        Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete']);
+        Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete'])
+            ->middleware('clinic.permission:assistant.complete-reservations');
     });
 
     // Doctor, assistant and sub-doctor can print prescriptions
@@ -148,23 +158,32 @@ Route::middleware('auth:sanctum')->group(function () {
     // Check-in & Waiting Queue routes
     // Assistant and sub-doctor can check in patients
     Route::middleware(['role:assistant,sub-doctor'])->group(function () {
-        Route::post('/reservations/{reservation}/check-in', [CheckInController::class, 'checkIn']);
-        Route::post('/reservations/{reservation}/undo-check-in', [CheckInController::class, 'undoCheckIn']);
+        Route::post('/reservations/{reservation}/check-in', [CheckInController::class, 'checkIn'])
+            ->middleware('clinic.permission:assistant.check-in-patients');
+        Route::post('/reservations/{reservation}/undo-check-in', [CheckInController::class, 'undoCheckIn'])
+            ->middleware('clinic.permission:assistant.check-in-patients');
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
-        Route::get('/waiting-queue', [CheckInController::class, 'waitingQueue']);
-        Route::post('/waiting-queue/reorder', [CheckInController::class, 'reorderWaitingQueue']);
-        Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary']);
+        Route::get('/waiting-queue', [CheckInController::class, 'waitingQueue'])
+            ->middleware('clinic.permission:assistant.view-waiting-queue');
+        Route::post('/waiting-queue/reorder', [CheckInController::class, 'reorderWaitingQueue'])
+            ->middleware('clinic.permission:assistant.check-in-patients');
+        Route::get('/waiting-queue/summary', [CheckInController::class, 'queueSummary'])
+            ->middleware('clinic.permission:assistant.view-waiting-queue');
         Route::post('/whatsapp/test-message', [WhatsAppTestController::class, 'send']);
         Route::post('/whatsapp/test-image', [WhatsAppTestController::class, 'sendImage']);
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
-        Route::get('/reservations', [ReservationController::class, 'index']);
-        Route::get('/reservations/{reservation}', [ReservationController::class, 'show']);
-        Route::put('/reservations/{reservation}', [ReservationController::class, 'update']);
-        Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy']);
+        Route::get('/reservations', [ReservationController::class, 'index'])
+            ->middleware('clinic.permission:assistant.view-reservations');
+        Route::get('/reservations/{reservation}', [ReservationController::class, 'show'])
+            ->middleware('clinic.permission:assistant.view-reservations');
+        Route::put('/reservations/{reservation}', [ReservationController::class, 'update'])
+            ->middleware('clinic.permission:assistant.edit-reservations');
+        Route::delete('/reservations/{reservation}', [ReservationController::class, 'destroy'])
+            ->middleware('clinic.permission:assistant.delete-reservations');
 
     });
 
@@ -191,36 +210,50 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Financial routes
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
-        Route::get('/financials', [FinancialController::class, 'index']);
-        Route::get('/financials/summary', [FinancialController::class, 'summary']);
-        Route::get('/financials/{financial}', [FinancialController::class, 'show']);
+        Route::get('/financials', [FinancialController::class, 'index'])
+            ->middleware('clinic.permission:assistant.view-financials');
+        Route::get('/financials/summary', [FinancialController::class, 'summary'])
+            ->middleware('clinic.permission:assistant.view-financials');
+        Route::get('/financials/{financial}', [FinancialController::class, 'show'])
+            ->middleware('clinic.permission:assistant.view-financials');
         // Transactions for a financial record
-        Route::get('/financials/{financial}/transactions', [TransactionController::class, 'index']);
-        Route::post('/financials/{financial}/transactions', [TransactionController::class, 'store']);
-        Route::post('/financials/{financial}/transactions/batch', [TransactionController::class, 'storeBatch']);
-        Route::delete('/financials/{financial}/transactions/{transaction}', [TransactionController::class, 'destroy']);
+        Route::get('/financials/{financial}/transactions', [TransactionController::class, 'index'])
+            ->middleware('clinic.permission:assistant.view-financials');
+        Route::post('/financials/{financial}/transactions', [TransactionController::class, 'store'])
+            ->middleware('clinic.permission:assistant.edit-financials');
+        Route::post('/financials/{financial}/transactions/batch', [TransactionController::class, 'storeBatch'])
+            ->middleware('clinic.permission:assistant.edit-financials');
+        Route::delete('/financials/{financial}/transactions/{transaction}', [TransactionController::class, 'destroy'])
+            ->middleware('clinic.permission:assistant.edit-financials');
         // All transactions for the doctor
-        Route::get('/transactions', [TransactionController::class, 'allForDoctor']);
+        Route::get('/transactions', [TransactionController::class, 'allForDoctor'])
+            ->middleware('clinic.permission:assistant.view-financials');
         // Purchases (view)
-            Route::get('/purchases', [PurchaseController::class, 'index']);
-            Route::get('/purchases/categories', [PurchaseController::class, 'categories']);
+            Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('clinic.permission:assistant.view-purchases');
+            Route::get('/purchases/categories', [PurchaseController::class, 'categories'])->middleware('clinic.permission:assistant.view-purchases');
         // unified stats endpoint (accepts GET and POST payloads)
-        Route::get('/purchases/stats', [PurchaseController::class, 'stats']);
-        Route::post('/purchases/stats', [PurchaseController::class, 'stats']);
-        Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
+        Route::get('/purchases/stats', [PurchaseController::class, 'stats'])->middleware('clinic.permission:assistant.view-purchases');
+        Route::post('/purchases/stats', [PurchaseController::class, 'stats'])->middleware('clinic.permission:assistant.view-purchases');
+        Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->middleware('clinic.permission:assistant.view-purchases');
     });
 
     Route::middleware(['role:assistant'])->group(function () {
-        Route::post('/financials', [FinancialController::class, 'store']);
-        Route::put('/financials/{financial}', [FinancialController::class, 'update']);
-        Route::delete('/financials/{financial}', [FinancialController::class, 'destroy']);
+        Route::post('/financials', [FinancialController::class, 'store'])
+            ->middleware('clinic.permission:assistant.create-financials');
+        Route::put('/financials/{financial}', [FinancialController::class, 'update'])
+            ->middleware('clinic.permission:assistant.edit-financials');
+        Route::delete('/financials/{financial}', [FinancialController::class, 'destroy'])
+            ->middleware('clinic.permission:assistant.delete-financials');
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         // Purchases (create/update/delete)
-        Route::post('/purchases', [PurchaseController::class, 'store']);
-        Route::put('/purchases/{purchase}', [PurchaseController::class, 'update']);
-        Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy']);
+        Route::post('/purchases', [PurchaseController::class, 'store'])
+            ->middleware('clinic.permission:assistant.create-purchases');
+        Route::put('/purchases/{purchase}', [PurchaseController::class, 'update'])
+            ->middleware('clinic.permission:assistant.edit-purchases');
+        Route::delete('/purchases/{purchase}', [PurchaseController::class, 'destroy'])
+            ->middleware('clinic.permission:assistant.delete-purchases');
     });
 
     // Archive / file system routes
