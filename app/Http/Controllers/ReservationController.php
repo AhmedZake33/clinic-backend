@@ -177,13 +177,25 @@ class ReservationController extends Controller
         if ($to = $request->query('date_to')) {
             $query->whereDate('appointment_date', '<=', $to);
         }
-        // Search by client name or notes
+        // Search by client id/name/phone or notes. Typing "#123" targets client id 123.
         if ($search = $request->query('search')) {
-            $query->where(function ($q) use ($search) {
-                $q->whereHas('client', function ($qc) use ($search) {
-                    $qc->where('name', 'like', "%{$search}%");
-                })->orWhere('notes', 'like', "%{$search}%");
-            });
+            $clientIdSearch = $this->clientIdSearchTerm($search);
+
+            if ($this->isStrictClientIdSearch($search)) {
+                $query->where('client_id', $clientIdSearch ?? 0);
+            } else {
+                $query->where(function ($q) use ($search, $clientIdSearch) {
+                    $q->whereHas('client', function ($qc) use ($search) {
+                        $qc->where('name', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%")
+                            ->orWhere('whatsapp_number', 'like', "%{$search}%");
+                    })->orWhere('notes', 'like', "%{$search}%");
+
+                    if ($clientIdSearch !== null) {
+                        $q->orWhere('client_id', $clientIdSearch);
+                    }
+                });
+            }
         }
 
         $reservations = $query->latest()->paginate(10);
@@ -1125,5 +1137,21 @@ class ReservationController extends Controller
     {
         $pdf->Cell(50, 6, $label . ':', 0, 0, $align);
         $pdf->MultiCell(0, 6, $value, 0, $align);
+    }
+
+    private function clientIdSearchTerm(string $search): ?int
+    {
+        $term = trim($search);
+
+        if (!preg_match('/^#?\d+$/', $term)) {
+            return null;
+        }
+
+        return (int) ltrim($term, '#');
+    }
+
+    private function isStrictClientIdSearch(string $search): bool
+    {
+        return str_starts_with(trim($search), '#');
     }
 }

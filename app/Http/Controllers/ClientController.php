@@ -30,21 +30,30 @@ class ClientController extends Controller
         $query = Client::with('creator')
             ->where('doctor_id', $primaryDoctorId);
 
-        // Optional search by name/email/phone
+        // Optional search by id/name/email/phone. Typing "#123" targets client id 123.
         if ($search = $request->query('search')) {
             $phoneSearches = $this->phoneSearchTerms($search);
+            $clientIdSearch = $this->clientIdSearchTerm($search);
 
-            $query->where(function ($q) use ($search, $phoneSearches) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhere('whatsapp_number', 'like', "%{$search}%");
+            if ($this->isStrictClientIdSearch($search)) {
+                $query->where('id', $clientIdSearch ?? 0);
+            } else {
+                $query->where(function ($q) use ($search, $phoneSearches, $clientIdSearch) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%")
+                        ->orWhere('whatsapp_number', 'like', "%{$search}%");
 
-                foreach ($phoneSearches as $term) {
-                    $q->orWhere('phone', 'like', "%{$term}%")
-                        ->orWhere('whatsapp_number', 'like', "%{$term}%");
-                }
-            });
+                    if ($clientIdSearch !== null) {
+                        $q->orWhere('id', $clientIdSearch);
+                    }
+
+                    foreach ($phoneSearches as $term) {
+                        $q->orWhere('phone', 'like', "%{$term}%")
+                            ->orWhere('whatsapp_number', 'like', "%{$term}%");
+                    }
+                });
+            }
         }
 
         // Optional created date range filters
@@ -206,6 +215,22 @@ class ClientController extends Controller
         }
 
         return array_values(array_unique(array_filter($terms)));
+    }
+
+    private function clientIdSearchTerm(string $search): ?int
+    {
+        $term = trim($search);
+
+        if (!preg_match('/^#?\d+$/', $term)) {
+            return null;
+        }
+
+        return (int) ltrim($term, '#');
+    }
+
+    private function isStrictClientIdSearch(string $search): bool
+    {
+        return str_starts_with(trim($search), '#');
     }
 
     private function clientPayload(Request $request): array
