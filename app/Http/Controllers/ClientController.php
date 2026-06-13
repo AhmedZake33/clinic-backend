@@ -153,14 +153,16 @@ class ClientController extends Controller
 
     private function normalizeClientPhoneInputs(Request $request): void
     {
+        $this->requireClientPhoneCountryCodes($request);
+
         $request->merge([
             'phone' => $this->normalizePhoneNumber(
                 $request->input('phone'),
-                $request->input('phone_country_code') ?: $request->input('country_code')
+                $request->input('phone_country_code')
             ),
             'whatsapp_number' => $this->normalizePhoneNumber(
                 $request->input('whatsapp_number'),
-                $request->input('whatsapp_country_code') ?: $request->input('country_code')
+                $request->input('whatsapp_country_code')
             ),
         ]);
     }
@@ -188,6 +190,38 @@ class ClientController extends Controller
         }
 
         return $digits;
+    }
+
+    private function requireClientPhoneCountryCodes(Request $request): void
+    {
+        $errors = [];
+
+        if ($this->phoneNeedsCountryCode($request->input('phone'), $request->input('phone_country_code'))) {
+            $errors['phone_country_code'] = ['Country code is required when entering a mobile number.'];
+        }
+
+        if ($this->phoneNeedsCountryCode($request->input('whatsapp_number'), $request->input('whatsapp_country_code'))) {
+            $errors['whatsapp_country_code'] = ['Country code is required when entering a WhatsApp number.'];
+        }
+
+        if ($errors) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+    }
+
+    private function phoneNeedsCountryCode($number, $countryCode = null): bool
+    {
+        if (!filled($number)) {
+            return false;
+        }
+
+        $rawNumber = trim((string) $number);
+
+        if ($rawNumber === '' || str_starts_with($rawNumber, '+')) {
+            return false;
+        }
+
+        return !filled($countryCode);
     }
 
     private function phoneSearchTerms(string $search): array
