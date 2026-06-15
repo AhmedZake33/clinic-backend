@@ -68,20 +68,9 @@ class FinancialController extends Controller
             ->whereIn('doctor_id', $doctorIds)
             ->findOrFail($request->reservation_id);
 
-        $paid = $request->paid ?? 0;
-        $amount = $request->amount;
-        $remaining = $amount - $paid;
-
-        // Determine payment status
-        if ($paid <= 0) {
-            $paymentStatus = 'unpaid';
-        } elseif ($paid >= $amount) {
-            $paymentStatus = 'paid';
-            $remaining = 0;
-            $paid = $amount;
-        } else {
-            $paymentStatus = 'partial';
-        }
+        $amount = round((float) $request->amount, 2);
+        $paid = round((float) ($request->paid ?? 0), 2);
+        [$paid, $remaining, $paymentStatus] = $this->paymentTotalsForAmount($amount, $paid);
 
         $financial = DB::transaction(function () use ($request, $reservation, $paid, $amount, $remaining, $paymentStatus) {
             $financial = Financial::create([
@@ -143,22 +132,15 @@ class FinancialController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $paid = $request->paid ?? 0;
-        $amount = $request->amount;
-        $remaining = $amount - $paid;
+        $amount = round((float) $request->amount, 2);
 
-        if ($paid <= 0) {
-            $paymentStatus = 'unpaid';
-        } elseif ($paid >= $amount) {
-            $paymentStatus = 'paid';
-            $remaining = 0;
-            $paid = $amount;
-        } else {
-            $paymentStatus = 'partial';
-        }
-
-        DB::transaction(function () use ($request, $financial, $paid, $amount, $remaining, $paymentStatus) {
-            $previousPaid = (float) $financial->paid;
+        DB::transaction(function () use ($request, $financial, $amount) {
+            $transactionsPaid = round((float) $financial->transactions()->sum('amount'), 2);
+            $hasTransactions = $financial->transactions()->exists();
+            $paidSource = $hasTransactions
+                ? $transactionsPaid
+                : round((float) ($request->paid ?? $financial->paid ?? 0), 2);
+            [$paid, $remaining, $paymentStatus] = $this->paymentTotalsForAmount($amount, $paidSource);
 
             $financial->update([
                 'amount'         => $amount,
@@ -168,23 +150,29 @@ class FinancialController extends Controller
                 'payment_method' => $request->payment_method,
                 'notes'          => $request->notes,
             ]);
-
-            $diff = round($paid - $previousPaid, 2);
-            if ($diff > 0) {
-                Transaction::create([
-                    'financial_id'   => $financial->id,
-                    'doctor_id'      => $financial->doctor_id,
-                    'created_by'     => $request->user()->id,
-                    'amount'         => $diff,
-                    'payment_method' => $request->payment_method,
-                    'notes'          => null,
-                ]);
-            }
         });
 
         $financial->load(['reservation', 'client', 'doctor', 'creator']);
 
         return response()->json($financial);
+    }
+
+    private function paymentTotalsForAmount(float $amount, float $paidSource): array
+    {
+        $amount = max(0, round($amount, 2));
+        $paid = min(max(0, round($paidSource, 2)), $amount);
+        $remaining = max(0, round($amount - $paid, 2));
+
+        if ($paid <= 0) {
+            $paymentStatus = 'unpaid';
+        } elseif ($remaining <= 0) {
+            $paymentStatus = 'paid';
+            $remaining = 0;
+        } else {
+            $paymentStatus = 'partial';
+        }
+
+        return [$paid, $remaining, $paymentStatus];
     }
 
     public function destroy(Request $request, Financial $financial)

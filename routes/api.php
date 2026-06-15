@@ -212,8 +212,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware(['role:assistant'])->group(function () {
         Route::post('/financials', [FinancialController::class, 'store']);
-        Route::put('/financials/{financial}', [FinancialController::class, 'update']);
         Route::delete('/financials/{financial}', [FinancialController::class, 'destroy']);
+    });
+
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::put('/financials/{financial}', [FinancialController::class, 'update']);
     });
 
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {

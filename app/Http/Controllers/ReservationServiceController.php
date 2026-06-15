@@ -238,23 +238,37 @@ class ReservationServiceController extends Controller
             $financial = $baseFinancial;
         }
 
-        $amount = $servicesTotal;
-        $paid = (float) $financial->paid;
-        $remaining = max(0, $amount - $paid);
+        $amount = round($servicesTotal, 2);
+        $transactionsPaid = round((float) $financial->transactions()->sum('amount'), 2);
+        $paidSource = $financial->transactions()->exists()
+            ? $transactionsPaid
+            : round((float) $financial->paid, 2);
+        [$paid, $remaining, $paymentStatus] = $this->paymentTotalsForAmount($amount, $paidSource);
+
+        $financial->update([
+            'amount' => $amount,
+            'paid' => $paid,
+            'remaining' => $remaining,
+            'payment_status' => $paymentStatus,
+            'notes' => $invoiceNote,
+        ]);
+    }
+
+    private function paymentTotalsForAmount(float $amount, float $paidSource): array
+    {
+        $amount = max(0, round($amount, 2));
+        $paid = min(max(0, round($paidSource, 2)), $amount);
+        $remaining = max(0, round($amount - $paid, 2));
 
         if ($paid <= 0) {
             $paymentStatus = 'unpaid';
         } elseif ($remaining <= 0) {
             $paymentStatus = 'paid';
+            $remaining = 0;
         } else {
             $paymentStatus = 'partial';
         }
 
-        $financial->update([
-            'amount' => $amount,
-            'remaining' => $remaining,
-            'payment_status' => $paymentStatus,
-            'notes' => $invoiceNote,
-        ]);
+        return [$paid, $remaining, $paymentStatus];
     }
 }

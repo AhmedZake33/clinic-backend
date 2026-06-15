@@ -37,6 +37,27 @@ class TransactionController extends Controller
         if ($method = $request->query('payment_method')) {
             $query->where('payment_method', $method);
         }
+
+        if ($search = $request->query('search')) {
+            $clientIdSearch = $this->clientIdSearchTerm($search);
+
+            $query->whereHas('financial.client', function ($q) use ($search, $clientIdSearch) {
+                if ($this->isStrictClientIdSearch($search)) {
+                    $q->where('id', $clientIdSearch ?? 0);
+                    return;
+                }
+
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%")
+                    ->orWhere('phone', 'like', "%{$search}%")
+                    ->orWhere('whatsapp_number', 'like', "%{$search}%");
+
+                if ($clientIdSearch !== null) {
+                    $q->orWhere('id', $clientIdSearch);
+                }
+            });
+        }
+
         if ($from = $request->query('date_from')) {
             $query->whereDate('created_at', '>=', $from);
         }
@@ -47,6 +68,22 @@ class TransactionController extends Controller
         $transactions = $query->latest()->paginate(20);
 
         return response()->json($transactions);
+    }
+
+    private function clientIdSearchTerm(string $search): ?int
+    {
+        $term = trim($search);
+
+        if (!preg_match('/^#?\d+$/', $term)) {
+            return null;
+        }
+
+        return (int) ltrim($term, '#');
+    }
+
+    private function isStrictClientIdSearch(string $search): bool
+    {
+        return str_starts_with(trim($search), '#');
     }
 
     /** Create a new payment transaction for a financial record */
