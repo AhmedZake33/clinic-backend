@@ -14,6 +14,8 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
+    public const SUBSCRIPTION_EXPIRED_MESSAGE = 'انتهى الاشتراك، برجاء التواصل مع الأدمن لتجديد الاشتراك.';
+
     /**
      * The attributes that are mass assignable.
      *

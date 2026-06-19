@@ -42,18 +42,31 @@ class AuthController extends Controller
 
         // Check subscription status for doctors
         if ($user->role === 'doctor' && $user->isSubscriptionExpired()) {
-            throw ValidationException::withMessages([
-                'email' => ['Your subscription has expired. Please contact the administrator.'],
-            ]);
+            return response()->json([
+                'message' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                'error' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                'code' => 'subscription_expired',
+            ], 403);
         }
 
         // Check doctor's subscription status for assistants
         if ($user->role === 'assistant' && $user->doctor) {
             if ($user->doctor->isSubscriptionExpired()) {
-                throw ValidationException::withMessages([
-                    'email' => ['The doctor\'s subscription has expired. Please contact the administrator.'],
-                ]);
+                return response()->json([
+                    'message' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                    'error' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                    'code' => 'subscription_expired',
+                ], 403);
             }
+        }
+
+        // Check parent doctor's subscription status for sub-doctors
+        if ($user->role === 'sub-doctor' && $user->parentDoctor?->isSubscriptionExpired()) {
+            return response()->json([
+                'message' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                'error' => User::SUBSCRIPTION_EXPIRED_MESSAGE,
+                'code' => 'subscription_expired',
+            ], 403);
         }
 
         $token = $user->createToken('clinic-app')->plainTextToken;
