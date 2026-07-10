@@ -163,7 +163,11 @@ class ReservationController extends Controller
             : $this->getDoctorIds($request);
 
         $query = Reservation::with(['client', 'doctor', 'creator', 'archive.children'])
-            ->whereIn('doctor_id', $doctorIds);
+            ->whereIn('doctor_id', $doctorIds)
+            ->where(function ($q) {
+                $q->where('source', '!=', 'online')
+                    ->orWhereNull('source');
+            });
 
         // Optional filters
         if ($status = $request->query('status')) {
@@ -441,7 +445,10 @@ class ReservationController extends Controller
             return response()->json(['error' => 'Only pending reservations can be confirmed'], 422);
         }
 
-        $reservation->update(['status' => 'confirmed']);
+        $reservation->update([
+            'status' => 'confirmed',
+            'source' => $reservation->source === 'online' ? 'internal' : $reservation->source,
+        ]);
         $this->logReservationAction($reservation, $request, 'confirmed', 'Reservation confirmed');
         $reservation->load(['client', 'doctor', 'creator', 'logs.actor']);
 

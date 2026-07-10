@@ -23,6 +23,7 @@ use App\Http\Controllers\DoctorServiceController;
 use App\Http\Controllers\ReservationServiceController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\WhatsAppTestController;
+use App\Http\Controllers\OnlineBookingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -33,6 +34,9 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
+Route::get('/online-booking/{slug}', [OnlineBookingController::class, 'show']);
+Route::get('/online-booking/{slug}/doctors/{doctor}/available-times', [OnlineBookingController::class, 'availableTimes']);
+Route::post('/online-booking/{slug}/reservations', [OnlineBookingController::class, 'store'])->middleware('throttle:10,1');
 // Broadcasting auth route for Sanctum
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
@@ -44,6 +48,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-permissions', [AuthController::class, 'myPermissions']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
 
+    // Online booking settings and requests
+    Route::middleware(['role:doctor'])->group(function () {
+        Route::get('/doctor/online-booking-settings', [OnlineBookingController::class, 'settings']);
+        Route::put('/doctor/online-booking-settings', [OnlineBookingController::class, 'updateSettings']);
+    });
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/online-reservations', [OnlineBookingController::class, 'onlineReservations']);
+    });
     // Admin routes
     Route::middleware(['role:admin'])->group(function () {
         Route::get('/admin/doctors', [AdminController::class, 'indexDoctors']);
@@ -240,7 +252,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/specializations', [SpecializationController::class, 'index']);
     Route::get('/features', [FeatureController::class, 'index']);
 
-    // Doctor Services catalog — only doctor & sub-doctor can manage their own catalog
+    // Doctor Services catalog â€” only doctor & sub-doctor can manage their own catalog
     Route::middleware(['role:doctor,sub-doctor'])->group(function () {
         Route::get('/doctor-services', [DoctorServiceController::class, 'index']);
         Route::post('/doctor-services', [DoctorServiceController::class, 'store']);
@@ -253,7 +265,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/doctor-diagnoses/{doctorDiagnosis}', [DoctorDiagnosisController::class, 'destroy']);
     });
 
-    // Services on a specific reservation — doctor, sub-doctor & assistant (permission-protected)
+    // Services on a specific reservation â€” doctor, sub-doctor & assistant (permission-protected)
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::get('/doctors/{doctor}/doctor-services', [DoctorServiceController::class, 'forDoctor'])
             ->middleware('permission:reservation-services.view');

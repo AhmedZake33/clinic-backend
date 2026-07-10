@@ -46,6 +46,7 @@ class User extends Authenticatable
         'subscription_amount',
         'notes',
         'max_sub_doctors',
+        'booking_slug',
     ];
 
     /**

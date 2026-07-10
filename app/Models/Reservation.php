@@ -34,6 +34,10 @@ class Reservation extends Model
         'checked_in_at',
         'whatsapp_reminder_sent_at',
         'waiting_number',
+        'source',
+        'online_booking_existing_client',
+        'online_booking_ip',
+        'online_booking_user_agent',
     ];
 
     protected $casts = [
@@ -44,6 +48,7 @@ class Reservation extends Model
         'requires_xray' => 'boolean',
         'requires_lab' => 'boolean',
         'waiting_number' => 'integer',
+        'online_booking_existing_client' => 'boolean',
     ];
 
     public function client()
