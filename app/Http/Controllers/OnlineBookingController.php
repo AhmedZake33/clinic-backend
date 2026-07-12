@@ -64,6 +64,9 @@ class OnlineBookingController extends Controller
         return response()->json([
             'clinic' => [
                 'name' => $doctor->print_clinic_name ?: $doctor->name,
+                'header' => $doctor->print_header_text,
+                'primary_color' => $doctor->print_primary_color ?: '#7367f0',
+                'position' => $doctor->print_clinic_name_position ?: 'center',
                 'phone' => $doctor->print_clinic_phone ?: $doctor->phone,
                 'address' => $doctor->print_clinic_address,
             ],
@@ -174,6 +177,11 @@ class OnlineBookingController extends Controller
         return response()->json([
             'booking_slug' => $user->booking_slug,
             'booking_url' => $this->bookingUrl($request, $user->booking_slug),
+            'clinic_name' => $user->print_clinic_name,
+            'clinic_header' => $user->print_header_text,
+            'clinic_phone' => $user->print_clinic_phone,
+            'clinic_primary_color' => $user->print_primary_color ?: '#7367f0',
+            'clinic_position' => $user->print_clinic_name_position ?: 'center',
         ]);
     }
 
@@ -188,16 +196,33 @@ class OnlineBookingController extends Controller
                 'string',
                 'min:3',
                 'max:80',
-                'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
+                'regex:/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/',
                 Rule::unique('users', 'booking_slug')->ignore($user->id),
             ],
+            'clinic_name' => 'nullable|string|max:255',
+            'clinic_header' => 'nullable|string|max:2000',
+            'clinic_phone' => 'nullable|string|max:255',
+            'clinic_primary_color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'clinic_position' => 'nullable|in:left,center,right',
         ]);
 
-        $user->update(['booking_slug' => $validated['booking_slug']]);
+        $user->update([
+            'booking_slug' => $validated['booking_slug'],
+            'print_clinic_name' => $validated['clinic_name'] ?? null,
+            'print_header_text' => $validated['clinic_header'] ?? null,
+            'print_clinic_phone' => $validated['clinic_phone'] ?? null,
+            'print_primary_color' => $validated['clinic_primary_color'] ?? '#7367f0',
+            'print_clinic_name_position' => $validated['clinic_position'] ?? 'center',
+        ]);
 
         return response()->json([
             'booking_slug' => $user->booking_slug,
             'booking_url' => $this->bookingUrl($request, $user->booking_slug),
+            'clinic_name' => $user->print_clinic_name,
+            'clinic_header' => $user->print_header_text,
+            'clinic_phone' => $user->print_clinic_phone,
+            'clinic_primary_color' => $user->print_primary_color ?: '#7367f0',
+            'clinic_position' => $user->print_clinic_name_position ?: 'center',
         ]);
     }
 
