@@ -9,9 +9,10 @@ use Illuminate\Support\Facades\Http;
 class OpenFdaController extends Controller
 {
     private const BASE_URL = 'https://api.fda.gov/drug';
+    private const EGYPT_DRUGS_API_URL = 'https://ready-api.vercel.app/api/drugs-eg';
 
     /**
-     * Search Egyptian drugs from local database.
+     * Search Egyptian drugs using Ready API, with local DB fallback.
      */
     public function searchEgyptDrugs(Request $request)
     {
@@ -25,12 +26,73 @@ class OpenFdaController extends Controller
         $query = $request->input('query');
         $limit = $request->input('limit', 15);
 
+        try {
+            $params = [
+                'search' => $query,
+                'limit' => $limit,
+                'page' => 1,
+            ];
+
+            if ($category = $request->input('category')) {
+                $params['drug_class'] = $category;
+            }
+
+            if ($form = $request->input('form')) {
+                $params['route'] = $form;
+            }
+
+            $response = Http::acceptJson()
+                ->timeout(15)
+                ->get(self::EGYPT_DRUGS_API_URL, $params);
+
+            if ($response->successful()) {
+                $payload = $response->json();
+                $items = collect($payload['data'] ?? [])
+                    ->map(fn ($item) => $this->mapReadyApiEgyptDrug($item))
+                    ->filter(fn ($item) => $item['name'])
+                    ->values();
+
+                return response()->json([
+                    'results' => $items,
+                    'total' => $payload['pagination']['total'] ?? $items->count(),
+                    'source' => 'ready-api',
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Fall back to the local database below.
+        }
+
+        return $this->searchLocalEgyptDrugs($query, $limit, $request->input('category'), $request->input('form'));
+    }
+
+    private function mapReadyApiEgyptDrug(array $item): array
+    {
+        $name = $item['commercial_name_en']
+            ?? $item['commercial_name_ar']
+            ?? $item['scientific_name']
+            ?? null;
+
+        return [
+            'id' => md5(json_encode($item)),
+            'name' => $name,
+            'name_ar' => $item['commercial_name_ar'] ?? null,
+            'scientific_name' => $item['scientific_name'] ?? null,
+            'company' => $item['manufacturer'] ?? null,
+            'category' => $item['drug_class'] ?? null,
+            'form' => $item['route'] ?? null,
+            'price_egp' => $item['price_egp'] ?? null,
+            'source' => 'ready-api',
+        ];
+    }
+
+    private function searchLocalEgyptDrugs(string $query, int $limit, ?string $category, ?string $form)
+    {
         $builder = EgyptDrug::where('name', 'LIKE', "%{$query}%");
 
-        if ($category = $request->input('category')) {
+        if ($category) {
             $builder->where('category', $category);
         }
-        if ($form = $request->input('form')) {
+        if ($form) {
             $builder->where('form', $form);
         }
 
@@ -41,6 +103,7 @@ class OpenFdaController extends Controller
         return response()->json([
             'results' => $results,
             'total'   => $results->count(),
+            'source' => 'local',
         ]);
     }
 
