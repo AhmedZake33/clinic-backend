@@ -398,6 +398,16 @@ class ReservationController extends Controller
             'status' => 'required|in:pending,confirmed,completed,cancelled',
             'notes' => 'nullable|string',
             'diagnosis' => 'nullable|string',
+            'dental_chart' => 'nullable|array',
+            'dental_chart.teeth' => 'nullable|array',
+            'dental_chart.teeth.*.tooth' => 'required_with:dental_chart.teeth|integer|min:11|max:48',
+            'dental_chart.teeth.*.problem' => 'required_with:dental_chart.teeth|string|in:pain,caries,gum,fracture,missing,treatment',
+            'specialty_chart' => 'nullable|array',
+            'specialty_chart.type' => 'nullable|string|max:50',
+            'specialty_chart.items' => 'nullable|array',
+            'specialty_chart.items.*.type' => 'nullable|string|max:50',
+            'specialty_chart.items.*.part' => 'required_with:specialty_chart.items|string|max:80',
+            'specialty_chart.items.*.problem' => 'required_with:specialty_chart.items|string|max:50',
             'treatment' => 'nullable|string',
             'requires_xray' => 'nullable|boolean',
             'xray_notes' => 'nullable|string',
@@ -473,6 +483,20 @@ class ReservationController extends Controller
             return response()->json(['error' => 'You can only complete reservations in your clinic scope'], 403);
         }
 
+        if (is_string($request->input('dental_chart'))) {
+            $decodedDentalChart = json_decode($request->input('dental_chart'), true);
+            $request->merge([
+                'dental_chart' => json_last_error() === JSON_ERROR_NONE ? $decodedDentalChart : null,
+            ]);
+        }
+
+        if (is_string($request->input('specialty_chart'))) {
+            $decodedSpecialtyChart = json_decode($request->input('specialty_chart'), true);
+            $request->merge([
+                'specialty_chart' => json_last_error() === JSON_ERROR_NONE ? $decodedSpecialtyChart : null,
+            ]);
+        }
+
         $request->validate([
             'diagnosis' => 'nullable|string',
             'treatment' => 'nullable|string',
@@ -490,6 +514,8 @@ class ReservationController extends Controller
         $reservation->update([
             'status' => 'completed',
             'diagnosis' => $request->diagnosis,
+            'dental_chart' => $request->input('dental_chart'),
+            'specialty_chart' => $request->input('specialty_chart'),
             'treatment' => $request->treatment,
             'current_procedures' => $request->current_procedures,
             'procedure_notes' => $request->procedure_notes,

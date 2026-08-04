@@ -22,6 +22,8 @@ class Reservation extends Model
         'status',
         'notes',
         'diagnosis',
+        'dental_chart',
+        'specialty_chart',
         'treatment',
         'current_procedures',
         'procedure_notes',
@@ -47,6 +49,8 @@ class Reservation extends Model
         'whatsapp_reminder_sent_at' => 'datetime:Y-m-d H:i:s',
         'requires_xray' => 'boolean',
         'requires_lab' => 'boolean',
+        'dental_chart' => 'array',
+        'specialty_chart' => 'array',
         'waiting_number' => 'integer',
         'online_booking_existing_client' => 'boolean',
     ];

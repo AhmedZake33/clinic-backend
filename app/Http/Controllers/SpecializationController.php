@@ -8,7 +8,7 @@ class SpecializationController extends Controller
 {
     public function index()
     {
-        return response()->json([
+        $specializations = [
             ['value' => 'Allergy and Immunology', 'labels' => ['en' => 'Allergy and Immunology', 'ar' => 'الحساسية والمناعة']],
             ['value' => 'Anesthesiology', 'labels' => ['en' => 'Anesthesiology', 'ar' => 'التخدير']],
             ['value' => 'Audiology', 'labels' => ['en' => 'Audiology', 'ar' => 'السمعيات']],
@@ -49,6 +49,58 @@ class SpecializationController extends Controller
             ['value' => 'Rheumatology', 'labels' => ['en' => 'Rheumatology', 'ar' => 'الروماتيزم والمناعة']],
             ['value' => 'Urology', 'labels' => ['en' => 'Urology', 'ar' => 'المسالك البولية']],
             ['value' => 'Vascular Surgery', 'labels' => ['en' => 'Vascular Surgery', 'ar' => 'جراحة الأوعية الدموية']],
-        ]);
+        ];
+
+        return response()->json(array_map(function (array $specialization) {
+            $specialization['anatomy_map_key'] = $this->anatomyMapKey($specialization['value']);
+
+            return $specialization;
+        }, $specializations));
+    }
+
+    private function anatomyMapKey(string $specialization): string
+    {
+        return [
+            'Allergy and Immunology' => 'allergy_immunology',
+            'Anesthesiology' => 'anesthesiology',
+            'Audiology' => 'audiology',
+            'Bariatric Surgery' => 'bariatric_surgery',
+            'Cardiology' => 'cardiology',
+            'Cardiothoracic Surgery' => 'cardiothoracic_surgery',
+            'Dentistry' => 'dentistry',
+            'Dermatology' => 'dermatology',
+            'Emergency Medicine' => 'emergency',
+            'Endocrinology' => 'endocrinology',
+            'ENT' => 'ent',
+            'Family Medicine' => 'family_medicine',
+            'Gastroenterology' => 'gastroenterology',
+            'General Practice' => 'general_practice',
+            'General Surgery' => 'general_surgery',
+            'Geriatrics' => 'geriatrics',
+            'Gynecology' => 'gynecology',
+            'Hematology' => 'hematology',
+            'Hepatology' => 'hepatology',
+            'Internal Medicine' => 'internal_medicine',
+            'Nephrology' => 'nephrology',
+            'Neurology' => 'neurology',
+            'Neurosurgery' => 'neurosurgery',
+            'Nutrition' => 'nutrition',
+            'Obstetrics and Gynecology' => 'gynecology',
+            'Oncology' => 'oncology',
+            'Ophthalmology' => 'ophthalmology',
+            'Oral and Maxillofacial Surgery' => 'dentistry',
+            'Orthodontics' => 'dentistry',
+            'Orthopedics' => 'orthopedics',
+            'Pediatrics' => 'pediatrics',
+            'Pediatric Surgery' => 'pediatric_surgery',
+            'Physical Therapy' => 'physical_therapy',
+            'Plastic Surgery' => 'plastic_surgery',
+            'Psychiatry' => 'psychiatry',
+            'Pulmonology' => 'pulmonology',
+            'Radiology' => 'radiology',
+            'Rheumatology' => 'rheumatology',
+            'Urology' => 'urology',
+            'Vascular Surgery' => 'vascular_surgery',
+        ][$specialization] ?? 'general_practice';
     }
 }
