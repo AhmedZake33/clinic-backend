@@ -6,6 +6,8 @@ use App\Http\Traits\NormalizesPhoneNumbers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Spatie\Permission\Models\Permission;
 
 class SubDoctorController extends Controller
@@ -36,7 +38,7 @@ class SubDoctorController extends Controller
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
             'specialization' => 'nullable|string|max:255',
-            'password' => 'nullable|string|min:6',
+            'password' => ['nullable', 'string', PasswordRule::defaults()],
         ]);
 
         // Enforce max_sub_doctors limit
@@ -50,7 +52,7 @@ class SubDoctorController extends Controller
             return response()->json(['message' => "You have reached the maximum number of sub-doctors allowed ({$maxAllowed})."], 422);
         }
 
-        $plainPassword = $data['password'] ?? \Str::random(10);
+        $plainPassword = !empty($data['password']) ? $data['password'] : Str::password(12, true, true, true, false);
 
         $user = User::create([
             'name' => $data['name'],
@@ -87,7 +89,7 @@ class SubDoctorController extends Controller
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
             'specialization' => 'nullable|string|max:255',
-            'password' => 'nullable|string|min:6',
+            'password' => ['nullable', 'string', PasswordRule::defaults()],
             'is_active' => 'boolean',
         ]);
 

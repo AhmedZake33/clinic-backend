@@ -10,6 +10,8 @@ use App\Services\WhatsApp\Contracts\WhatsAppMessageSender;
 use App\Services\WhatsApp\TafratechWhatsAppMessageSender;
 use App\Services\WhatsApp\WapilotWhatsAppMessageSender;
 
+use Illuminate\Validation\Rules\Password;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -43,5 +45,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Purchase::observe(PurchaseObserver::class);
+
+        Password::defaults(function () {
+            return Password::min(8)
+                ->letters()
+                ->mixedCase()
+                ->numbers()
+                ->symbols();
+        });
     }
 }

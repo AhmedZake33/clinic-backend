@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
+use Illuminate\Validation\Rules\Password as PasswordRule;
+
 class AdminController extends Controller
 {
     use NormalizesPhoneNumbers;
@@ -63,7 +65,7 @@ class AdminController extends Controller
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
             'specialization' => 'nullable|string|max:255',
-            'password' => 'required|string|min:8',
+            'password' => ['required', 'string', PasswordRule::defaults()],
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
             'is_active' => 'boolean',
@@ -167,7 +169,7 @@ class AdminController extends Controller
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
             'specialization' => 'nullable|string|max:255',
-            'password' => 'nullable|string|min:8',
+            'password' => ['nullable', 'string', PasswordRule::defaults()],
             'subscription_start' => 'nullable|date',
             'subscription_end' => 'nullable|date|after_or_equal:subscription_start',
             'is_active' => 'boolean',

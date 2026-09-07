@@ -12,6 +12,8 @@ use Illuminate\Support\Str;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Validation\ValidationException;
 
+use Illuminate\Validation\Rules\Password as PasswordRule;
+
 class AuthController extends Controller
 {
     public function login(Request $request)
@@ -93,7 +95,7 @@ class AuthController extends Controller
         $rules = [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users',
-            'password' => 'required|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', PasswordRule::defaults()],
             'role' => 'required|in:admin,doctor,assistant,client',
         ];
 
@@ -215,7 +217,7 @@ class AuthController extends Controller
     {
         $request->validate([
             'current_password' => 'required',
-            'password'         => 'required|min:8|confirmed',
+            'password'         => ['required', 'string', 'confirmed', PasswordRule::defaults()],
         ]);
 
         $user = $request->user();
@@ -257,7 +259,7 @@ class AuthController extends Controller
         $request->validate([
             'token'    => 'required',
             'email'    => 'required|email',
-            'password' => 'required|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', PasswordRule::defaults()],
         ]);
 
         try {

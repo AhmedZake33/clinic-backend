@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
+use Illuminate\Validation\Rules\Password as PasswordRule;
+
 class AssistantController extends Controller
 {
     use NormalizesPhoneNumbers;
@@ -38,7 +40,7 @@ class AssistantController extends Controller
             'email' => 'required|email|unique:users',
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
-            'password' => 'required|min:8|confirmed',
+            'password' => ['required', 'string', 'confirmed', PasswordRule::defaults()],
         ]);
 
         $doctor = $request->user();
@@ -77,7 +79,7 @@ class AssistantController extends Controller
             'email' => 'required|email|unique:users,email,' . $assistant->id,
             'phone' => 'nullable|string|max:20',
             'whatsapp_number' => 'nullable|string|max:20',
-            'password' => 'nullable|min:8|confirmed',
+            'password' => ['nullable', 'string', 'confirmed', PasswordRule::defaults()],
         ]);
 
         $data = [
