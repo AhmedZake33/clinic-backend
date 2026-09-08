@@ -36,6 +36,7 @@ class Reservation extends Model
         'checked_in_at',
         'whatsapp_reminder_sent_at',
         'waiting_number',
+        'position',
         'source',
         'online_booking_existing_client',
         'online_booking_ip',
@@ -52,6 +53,7 @@ class Reservation extends Model
         'dental_chart' => 'array',
         'specialty_chart' => 'array',
         'waiting_number' => 'integer',
+        'position' => 'integer',
         'online_booking_existing_client' => 'boolean',
     ];
 

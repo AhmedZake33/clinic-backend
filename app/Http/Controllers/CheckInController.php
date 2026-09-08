@@ -105,6 +105,7 @@ class CheckInController extends Controller
         $reservation->update([
             'checked_in_at' => null,
             'waiting_number' => null,
+            'position' => null,
         ]);
 
         ReservationLog::create([
@@ -135,8 +136,16 @@ class CheckInController extends Controller
         $query = Reservation::with(['client', 'doctor'])
             ->whereDate('appointment_date', $date)
             ->whereNotNull('checked_in_at')
-            ->whereIn('doctor_id', $doctorIds)
             ->where('status', '!=', 'cancelled');
+
+        $selectedDoctorId = $request->query('doctor_id');
+        if ($selectedDoctorId && in_array((int)$selectedDoctorId, $doctorIds)) {
+            $query->where('doctor_id', (int)$selectedDoctorId);
+            $primaryDoctorId = (int)$selectedDoctorId;
+        } else {
+            $query->whereIn('doctor_id', $doctorIds);
+            $primaryDoctorId = $doctorIds[0] ?? null;
+        }
 
         // Order: non-completed first by waiting number, then completed at bottom
         // Prefer explicit `position` when present, otherwise fall back to `waiting_number`.
@@ -147,8 +156,6 @@ class CheckInController extends Controller
             ->get();
 
         // Calculate estimated wait times
-        // Use the first/primary doctor id for avg consultation time
-        $primaryDoctorId = $doctorIds[0];
         $avgMinutes = $this->getAverageConsultationTime($primaryDoctorId);
         $currentlyServing = null;
         $waitingItems = [];
@@ -175,11 +182,17 @@ class CheckInController extends Controller
             $waitingItems[] = $item;
         }
 
+        // Doctors available for filtering
+        $doctors = \App\Models\User::whereIn('id', $doctorIds)
+            ->select('id', 'name', 'role')
+            ->orderBy('name')
+            ->get();
+
         // Stats
         $stats = [
             'total_checked_in' => $queue->count(),
-            'waiting' => $queue->where('status', '!=', 'completed')->whereNull('completed_at')->count(),
-            'completed' => $queue->where('status', 'completed')->count(),
+            'waiting' => collect($waitingItems)->where('queue_status', 'waiting')->count(),
+            'completed' => collect($waitingItems)->where('queue_status', 'completed')->count(),
             'avg_consultation_minutes' => $avgMinutes,
             'currently_serving' => $currentlyServing?->waiting_number,
         ];
@@ -188,6 +201,7 @@ class CheckInController extends Controller
             'queue' => $waitingItems,
             'stats' => $stats,
             'date' => $date,
+            'doctors' => $doctors,
         ]);
     }
 
@@ -256,25 +270,15 @@ class CheckInController extends Controller
     }
 
     /**
-     * Calculate average consultation time for a doctor based on recent completed reservations.
+     * Calculate average consultation time for a doctor based on availability slot duration or default.
      */
     private function getAverageConsultationTime(?int $doctorId): int
     {
-        return DoctorAvailability::where('user_id', $doctorId)
-            ->select("slot_duration_minutes")->first()?->slot_duration_minutes ?? 15;
-        $query = Reservation::whereNotNull('checked_in_at')
-            ->whereNotNull('completed_at')
-            ->where('status', 'completed');
-
-        if ($doctorId) {
-            $query->where('doctor_id', $doctorId);
+        if (!$doctorId) {
+            return 15;
         }
 
-        $avg = $query->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, checked_in_at, completed_at)) as avg_minutes')
-            ->value('avg_minutes');
-
-        // Default to 15 minutes if no data, cap between 5 and 60
-        $minutes = $avg ? round($avg) : 15;
-        return max(5, min(60, $minutes));
+        return DoctorAvailability::where('user_id', $doctorId)
+            ->value('slot_duration_minutes') ?? 15;
     }
 }
