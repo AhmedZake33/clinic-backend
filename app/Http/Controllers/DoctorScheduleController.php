@@ -2,18 +2,42 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\DoctorAvailability;
 use App\Models\DoctorHoliday;
 use App\Models\User;
+use App\Services\Reservations\ReservationBookingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 
 class DoctorScheduleController extends Controller
 {
-    public function getAvailability(User $doctor)
+    use ResolvesDoctor;
+
+    /**
+     * Schedules can be read by the clinic's own staff only: the doctor, their
+     * sub-doctors and assistants, plus a sub-doctor reading the parent doctor's schedule.
+     */
+    private function canViewSchedule(Request $request, User $doctor): bool
+    {
+        $user = $request->user();
+        $allowed = $this->getDoctorIds($request);
+
+        if ($user->role === 'sub-doctor' && $user->parent_doctor_id) {
+            $allowed[] = (int) $user->parent_doctor_id;
+        }
+
+        return in_array((int) $doctor->id, array_map('intval', $allowed), true);
+    }
+
+    public function getAvailability(Request $request, User $doctor)
     {
         if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
+        }
+
+        if (!$this->canViewSchedule($request, $doctor)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $availability = DoctorAvailability::where('user_id', $doctor->id)
@@ -77,10 +101,14 @@ class DoctorScheduleController extends Controller
         return response()->json($availability);
     }
 
-    public function getHolidays(User $doctor)
+    public function getHolidays(Request $request, User $doctor)
     {
         if (!in_array($doctor->role, ['doctor', 'sub-doctor'])) {
             return response()->json(['error' => 'User is not a doctor'], 422);
+        }
+
+        if (!$this->canViewSchedule($request, $doctor)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $holidays = DoctorHoliday::where('user_id', $doctor->id)
@@ -161,6 +189,10 @@ class DoctorScheduleController extends Controller
             return response()->json(['error' => 'User is not a doctor'], 422);
         }
 
+        if (!$this->canViewSchedule($request, $doctor)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $request->validate([
             'date' => 'required|date',
         ]);
@@ -201,12 +233,10 @@ class DoctorScheduleController extends Controller
         // Get existing reservations for this doctor on this date (exclude cancelled)
         $bookedTimes = \App\Models\Reservation::where('doctor_id', $doctor->id)
             ->whereDate('appointment_date', $date->toDateString())
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', ['cancelled', 'no_show'])
             ->pluck('appointment_date')
-            ->map(function ($dt) {
-                return \Carbon\Carbon::parse($dt)->format('H:i');
-            })
-            ->toArray();
+            ->map(fn ($dt) => \Carbon\Carbon::parse($dt))
+            ->all();
 
         // Generate slots within each availability window using configured duration
         $slots = [];
@@ -217,10 +247,12 @@ class DoctorScheduleController extends Controller
 
             while ($start->lt($end)) {
                 $timeStr = $start->format('H:i');
+                $slotAt = \Carbon\Carbon::parse($date->toDateString() . ' ' . $timeStr);
                 $slots[] = [
                     'time' => $timeStr,
                     'label' => $start->format('h:i A'),
-                    'booked' => in_array($timeStr, $bookedTimes),
+                    // booked when another reservation starts less than one slot away
+                    'booked' => ReservationBookingService::overlapsAny($bookedTimes, $slotAt, $slotDuration),
                 ];
                 $start->addMinutes($slotDuration);
             }

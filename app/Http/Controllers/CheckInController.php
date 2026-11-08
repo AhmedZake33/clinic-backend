@@ -39,31 +39,51 @@ class CheckInController extends Controller
             ], 422);
         }
 
+        // Check-in belongs to the day of the appointment
         $today = Carbon::today()->toDateString();
+        if (Carbon::parse($reservation->appointment_date)->toDateString() !== $today) {
+            return response()->json([
+                'error' => 'Check-in is only available on the day of the appointment',
+            ], 422);
+        }
+
         $doctorId = $reservation->doctor_id;
 
-        // Get next waiting number and position for this doctor today
-        $maxNumber = Reservation::where('doctor_id', $doctorId)
-            ->whereDate('appointment_date', $today)
-            ->whereNotNull('checked_in_at')
-            ->where('status', '!=', 'completed')
-            ->max('waiting_number');
+        // Lock the doctor row so two simultaneous check-ins can't get the same number
+        $waitingNumber = DB::transaction(function () use ($reservation, $doctorId, $today) {
+            \App\Models\User::whereKey($doctorId)->lockForUpdate()->first();
 
-        $maxPosition = Reservation::where('doctor_id', $doctorId)
-            ->whereDate('appointment_date', $today)
-            ->whereNotNull('checked_in_at')
-            ->where('status', '!=', 'completed')
-            ->max('position');
+            if (Reservation::whereKey($reservation->id)->whereNotNull('checked_in_at')->exists()) {
+                return null; // checked in by someone else a moment ago
+            }
 
-        $waitingNumber = ($maxNumber ?? 0) + 1;
-        $position = ($maxPosition ?? 0) + 1;
+            // Numbers keep increasing through the day. Completed patients count too,
+            // otherwise a new check-in could reuse a number that was already given out.
+            $maxNumber = Reservation::where('doctor_id', $doctorId)
+                ->whereDate('appointment_date', $today)
+                ->whereNotNull('checked_in_at')
+                ->max('waiting_number');
 
-        $reservation->update([
-            'checked_in_at' => now(),
-            'waiting_number' => $waitingNumber,
-            'position' => $position,
-            'status' => $reservation->status === 'pending' ? 'confirmed' : $reservation->status,
-        ]);
+            $maxPosition = Reservation::where('doctor_id', $doctorId)
+                ->whereDate('appointment_date', $today)
+                ->whereNotNull('checked_in_at')
+                ->max('position');
+
+            $number = ($maxNumber ?? 0) + 1;
+
+            $reservation->update([
+                'checked_in_at' => now(),
+                'waiting_number' => $number,
+                'position' => ($maxPosition ?? 0) + 1,
+                'status' => $reservation->status === 'pending' ? 'confirmed' : $reservation->status,
+            ]);
+
+            return $number;
+        });
+
+        if ($waitingNumber === null) {
+            return response()->json(['error' => 'Patient is already checked in'], 422);
+        }
 
         ReservationLog::create([
             'reservation_id' => $reservation->id,
@@ -136,7 +156,7 @@ class CheckInController extends Controller
         $query = Reservation::with(['client', 'doctor'])
             ->whereDate('appointment_date', $date)
             ->whereNotNull('checked_in_at')
-            ->where('status', '!=', 'cancelled');
+            ->whereNotIn('status', ['cancelled', 'no_show']);
 
         $selectedDoctorId = $request->query('doctor_id');
         if ($selectedDoctorId && in_array((int)$selectedDoctorId, $doctorIds)) {
@@ -157,30 +177,60 @@ class CheckInController extends Controller
 
         // Calculate estimated wait times
         $avgMinutes = $this->getAverageConsultationTime($primaryDoctorId);
+        $now = Carbon::now();
+
+        // Serving starts per doctor at that doctor's first reservation time of the day
+        // (earliest non-cancelled appointment, checked in or not).
+        $startTimes = Reservation::query()
+            ->whereDate('appointment_date', $date)
+            ->where('status', '!=', 'cancelled')
+            ->whereIn('doctor_id', $queue->pluck('doctor_id')->unique()->values())
+            ->groupBy('doctor_id')
+            ->selectRaw('doctor_id, MIN(appointment_date) as first_at')
+            ->pluck('first_at', 'doctor_id')
+            ->map(fn ($v) => Carbon::parse($v));
+
         $currentlyServing = null;
+        $servingByDoctor = [];   // doctor_id => true once someone is being served
+        $waitingAhead = [];      // doctor_id => number of waiting patients before
         $waitingItems = [];
 
-        foreach ($queue as $index => $reservation) {
+        foreach ($queue as $reservation) {
             $item = $reservation->toArray();
             $item['is_current'] = false;
+            $doctorId = $reservation->doctor_id;
+            $startsAt = $startTimes[$doctorId] ?? Carbon::parse($reservation->appointment_date);
+            $hasStarted = $now->greaterThanOrEqualTo($startsAt);
 
             if ($reservation->status === 'completed') {
                 $item['estimated_wait'] = null;
                 $item['queue_status'] = 'completed';
-            } elseif ($currentlyServing === null && $reservation->status !== 'completed') {
-                $currentlyServing = $reservation;
+            } elseif ($hasStarted && empty($servingByDoctor[$doctorId])) {
+                $servingByDoctor[$doctorId] = true;
+                $currentlyServing ??= $reservation;
                 $item['is_current'] = true;
                 $item['estimated_wait'] = 0;
                 $item['queue_status'] = 'serving';
             } else {
-                // Count how many non-completed are before this one
-                $ahead = collect($waitingItems)->where('queue_status', 'waiting')->count();
-                $item['estimated_wait'] = ($ahead + 1) * $avgMinutes;
+                $ahead = $waitingAhead[$doctorId] ?? 0;
+                $waitingAhead[$doctorId] = $ahead + 1;
+
+                if ($hasStarted) {
+                    // One patient is in the room, plus everyone waiting ahead
+                    $item['estimated_wait'] = ($ahead + 1) * $avgMinutes;
+                } else {
+                    // Nobody served yet: time until the first reservation, plus those ahead
+                    $item['estimated_wait'] = (int) ceil($now->diffInSeconds($startsAt) / 60) + $ahead * $avgMinutes;
+                }
                 $item['queue_status'] = 'waiting';
             }
 
+            $item['serving_starts_at'] = $startsAt->format('Y-m-d H:i:s');
             $waitingItems[] = $item;
         }
+
+        // Earliest start among doctors in this view (for the "Now serving" card)
+        $firstStart = $startTimes->sort()->first();
 
         // Doctors available for filtering
         $doctors = \App\Models\User::whereIn('id', $doctorIds)
@@ -195,6 +245,8 @@ class CheckInController extends Controller
             'completed' => collect($waitingItems)->where('queue_status', 'completed')->count(),
             'avg_consultation_minutes' => $avgMinutes,
             'currently_serving' => $currentlyServing?->waiting_number,
+            'serving_started' => $firstStart ? $now->greaterThanOrEqualTo($firstStart) : false,
+            'serving_starts_at' => $firstStart?->format('Y-m-d H:i:s'),
         ];
 
         return response()->json([
@@ -217,7 +269,7 @@ class CheckInController extends Controller
             ->join('users', 'reservations.doctor_id', '=', 'users.id')
             ->whereDate('reservations.appointment_date', $date)
             ->whereNotNull('reservations.checked_in_at')
-            ->where('reservations.status', '!=', 'cancelled')
+            ->whereNotIn('reservations.status', ['cancelled', 'no_show'])
             ->whereIn('reservations.doctor_id', $doctorIds)
             ->select(
                 'reservations.doctor_id',
@@ -248,23 +300,32 @@ class CheckInController extends Controller
             'ordered_ids.*' => 'integer|exists:reservations,id',
         ]);
 
-        $orderedIds = $data['ordered_ids'];
+        // Only patients that are checked in and still waiting, inside the caller's clinic
+        $reservations = Reservation::query()
+            ->whereIn('id', $data['ordered_ids'])
+            ->whereIn('doctor_id', $doctorIds)
+            ->whereNotNull('checked_in_at')
+            ->where('status', '!=', 'completed')
+            ->get()
+            ->keyBy('id');
 
-        DB::transaction(function () use ($orderedIds, $doctorIds) {
+        $orderedIds = array_values(array_filter($data['ordered_ids'], fn ($id) => $reservations->has($id)));
+
+        if (empty($orderedIds)) {
+            return response()->json(['error' => 'No valid reservations to reorder'], 422);
+        }
+
+        // Only `position` changes. `waiting_number` is the patient's ticket number and stays the same.
+        DB::transaction(function () use ($orderedIds) {
             foreach ($orderedIds as $index => $id) {
-                DB::table('reservations')
-                    ->where('id', $id)
-                    ->whereIn('doctor_id', $doctorIds)
-                    ->update([
-                        'position' => $index + 1,
-                        'waiting_number' => $index + 1,
-                    ]);
+                DB::table('reservations')->where('id', $id)->update(['position' => $index + 1]);
             }
         });
 
-        // Broadcast a queue.reordered event so other clients refresh
-        $primaryDoctorId = $doctorIds[0];
-        event(new \App\Events\QueueReordered($primaryDoctorId, $orderedIds));
+        // Tell each affected doctor's screens (doctor + sub-doctors) to refresh
+        foreach (collect($orderedIds)->groupBy(fn ($id) => $reservations[$id]->doctor_id) as $doctorId => $ids) {
+            event(new \App\Events\QueueReordered((int) $doctorId, $ids->values()->all()));
+        }
 
         return response()->json(['message' => 'Queue reordered successfully']);
     }

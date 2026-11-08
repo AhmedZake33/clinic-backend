@@ -8,8 +8,10 @@ use App\Models\DoctorAvailability;
 use App\Models\DoctorHoliday;
 use App\Models\Reservation;
 use App\Models\User;
+use App\Services\Reservations\ReservationBookingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -130,36 +132,47 @@ class OnlineBookingController extends Controller
         $dayOfWeek = (int) $appointment->dayOfWeek;
         $time = $appointment->format('H:i');
 
-        if ($this->isHoliday($doctor, $appointment, $dayOfWeek) || !$this->hasAvailability($doctor, $dayOfWeek, $time) || $this->hasConflict($doctor, $appointment)) {
+        // Lock the doctor row so two simultaneous requests can't take the same slot
+        $reservation = DB::transaction(function () use ($doctor, $primaryDoctor, $appointment, $dayOfWeek, $time, $validated, $request) {
+            User::whereKey($doctor->id)->lockForUpdate()->first();
+
+            if ($this->isHoliday($doctor, $appointment, $dayOfWeek)
+                || !$this->hasAvailability($doctor, $dayOfWeek, $time)
+                || $this->hasConflict($doctor, $appointment)) {
+                return null;
+            }
+
+            $client = $this->findExistingClientByPhone($primaryDoctor, $validated['phone']);
+            $existingClient = (bool) $client;
+
+            if (!$client) {
+                $client = Client::create([
+                    'doctor_id' => $primaryDoctor->id,
+                    'phone' => $validated['phone'],
+                    'name' => $validated['name'],
+                    'email' => $validated['email'] ?? null,
+                    'whatsapp_number' => $validated['whatsapp_number'] ?? null,
+                    'created_by' => $primaryDoctor->id,
+                ]);
+            }
+
+            return Reservation::create([
+                'client_id' => $client->id,
+                'doctor_id' => $doctor->id,
+                'created_by' => $primaryDoctor->id,
+                'appointment_date' => $appointment,
+                'status' => 'pending',
+                'source' => 'online',
+                'online_booking_existing_client' => $existingClient,
+                'notes' => $validated['notes'] ?? null,
+                'online_booking_ip' => $request->ip(),
+                'online_booking_user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
+            ]);
+        });
+
+        if (!$reservation) {
             return response()->json(['message' => 'Selected appointment is no longer available.'], 422);
         }
-
-        $client = $this->findExistingClientByPhone($primaryDoctor, $validated['phone']);
-        $existingClient = (bool) $client;
-
-        if (!$client) {
-            $client = Client::create([
-                'doctor_id' => $primaryDoctor->id,
-                'phone' => $validated['phone'],
-                'name' => $validated['name'],
-                'email' => $validated['email'] ?? null,
-                'whatsapp_number' => $validated['whatsapp_number'] ?? null,
-                'created_by' => $primaryDoctor->id,
-            ]);
-        }
-
-        $reservation = Reservation::create([
-            'client_id' => $client->id,
-            'doctor_id' => $doctor->id,
-            'created_by' => $primaryDoctor->id,
-            'appointment_date' => $appointment,
-            'status' => 'pending',
-            'source' => 'online',
-            'online_booking_existing_client' => $existingClient,
-            'notes' => $validated['notes'] ?? null,
-            'online_booking_ip' => $request->ip(),
-            'online_booking_user_agent' => Str::limit((string) $request->userAgent(), 500, ''),
-        ]);
 
         RateLimiter::hit($rateKey, 86400);
 
@@ -262,16 +275,14 @@ class OnlineBookingController extends Controller
         return DoctorAvailability::where('user_id', $doctor->id)
             ->where('day_of_week', $dayOfWeek)
             ->where('start_time', '<=', $time)
-            ->where('end_time', '>=', $time)
+            ->where('end_time', '>', $time)
             ->exists();
     }
 
+    /** Overlap-aware: a booking within one slot of this time (before or after) conflicts. */
     private function hasConflict(User $doctor, Carbon $appointment): bool
     {
-        return Reservation::where('doctor_id', $doctor->id)
-            ->where('appointment_date', $appointment)
-            ->where('status', '!=', 'cancelled')
-            ->exists();
+        return app(ReservationBookingService::class)->hasConflict($doctor->id, $appointment);
     }
 
     private function findExistingClientByPhone(User $primaryDoctor, string $phone): ?Client
@@ -328,10 +339,10 @@ class OnlineBookingController extends Controller
     {
         $bookedTimes = Reservation::where('doctor_id', $doctor->id)
             ->whereDate('appointment_date', $date->toDateString())
-            ->where('status', '!=', 'cancelled')
+            ->whereNotIn('status', ['cancelled', 'no_show'])
             ->pluck('appointment_date')
-            ->map(fn ($dt) => Carbon::parse($dt)->format('H:i'))
-            ->toArray();
+            ->map(fn ($dt) => Carbon::parse($dt))
+            ->all();
 
         $slots = [];
         $availabilities = DoctorAvailability::where('user_id', $doctor->id)
@@ -346,7 +357,8 @@ class OnlineBookingController extends Controller
 
             while ($start->lt($end)) {
                 $time = $start->format('H:i');
-                if (!in_array($time, $bookedTimes, true)) {
+                $slotAt = Carbon::parse($date->toDateString() . ' ' . $time);
+                if (!ReservationBookingService::overlapsAny($bookedTimes, $slotAt, $duration)) {
                     $slots[] = ['time' => $time, 'label' => $start->format('h:i A')];
                 }
                 $start->addMinutes($duration);

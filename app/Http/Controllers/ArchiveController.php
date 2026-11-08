@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\ResolvesDoctor;
 use App\Models\Archive;
+use App\Models\Reservation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,6 +12,8 @@ use Illuminate\Support\Facades\Storage;
 
 class ArchiveController extends Controller
 {
+    use ResolvesDoctor;
+
     public function archives(Request $request): JsonResponse
     {
         $request->validate([
@@ -27,6 +31,8 @@ class ArchiveController extends Controller
             ->where('related_id', 0)
             ->orderByRaw('COALESCE(`order`, 2147483647)')
             ->orderBy('id');
+
+        $this->scopeListing($request, $parent, $query);
 
         if ($request->filled('type')) {
             $query->where('type', $request->integer('type'));
@@ -61,8 +67,10 @@ class ArchiveController extends Controller
         ]);
     }
 
-    public function show(Archive $archive): JsonResponse
+    public function show(Request $request, Archive $archive): JsonResponse
     {
+        $this->authorizeArchive($request, $archive);
+
         return response()->json($archive->toTreeData());
     }
 
@@ -80,6 +88,7 @@ class ArchiveController extends Controller
         ]);
 
         if ($archive) {
+            $this->authorizeArchive($request, $archive);
             $archive->fill($request->only(['short_name', 'description', 'sub_title', 'content_type', 'language']));
             $archive->save();
             $archive->renameArchive($request->string('title')->toString());
@@ -88,6 +97,7 @@ class ArchiveController extends Controller
         }
 
         $parent = Archive::resolveParent($request->integer('parent_id'), $request->input('language'));
+        $this->authorizeArchive($request, $parent);
         $type = $request->input('type', Archive::TYPE_FOLDER);
 
         if ((int) $type !== Archive::TYPE_FOLDER) {
@@ -126,6 +136,8 @@ class ArchiveController extends Controller
         if (!$parent) {
             $parent = Archive::resolveParent($request->integer('parent_id'), $request->input('language'));
         }
+
+        $this->authorizeArchive($request, $parent);
 
         if (!$parent->isFolder()) {
             return response()->json(['message' => 'Files can only be uploaded to folders.'], 422);
@@ -173,6 +185,8 @@ class ArchiveController extends Controller
 
     public function update(Request $request, Archive $archive): JsonResponse
     {
+        $this->authorizeArchive($request, $archive);
+
         $request->validate([
             'file' => 'required|file|max:102400',
         ]);
@@ -190,20 +204,26 @@ class ArchiveController extends Controller
         return response()->json($archive->fresh()->toTreeData());
     }
 
-    public function destroy(Archive $archive): JsonResponse
+    public function destroy(Request $request, Archive $archive): JsonResponse
     {
+        $this->authorizeArchive($request, $archive);
+
         $archive->deleteArchive();
 
         return response()->json(['message' => 'Archive deleted successfully.']);
     }
 
-    public function download(Archive $archive)
+    public function download(Request $request, Archive $archive)
     {
+        $this->authorizeArchive($request, $archive);
+
         return $archive->downloadResponse();
     }
 
-    public function preview(Archive $archive)
+    public function preview(Request $request, Archive $archive)
     {
+        $this->authorizeArchive($request, $archive);
+
         abort_unless($archive->isFile(), 404, 'Archive item is not a file.');
         abort_unless(Storage::disk('archive')->exists($archive->diskPath()), 404, 'File not found.');
 
@@ -216,6 +236,85 @@ class ArchiveController extends Controller
             'Content-Type' => $mime,
             'Content-Disposition' => 'inline; filename="' . $archive->name() . '"',
         ]);
+    }
+
+    // ------------------------------------------------------------------
+    // Tenant scoping
+    //
+    // Archive files hold patient data (reservation completion files), so
+    // non-admin users may only touch items inside the `reservation-{id}`
+    // folders of reservations that belong to their own clinic.
+    // ------------------------------------------------------------------
+
+    private function isAdmin(Request $request): bool
+    {
+        return $request->user()?->role === 'admin';
+    }
+
+    /** Archive folder ids of the reservations in the caller's clinic scope. */
+    private function scopedFolderIds(Request $request): array
+    {
+        return Reservation::query()
+            ->whereIn('doctor_id', $this->getDoctorIds($request))
+            ->whereNotNull('archive_id')
+            ->pluck('archive_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /** True when the item is, or sits inside, one of the allowed folders. */
+    private function isInScope(Archive $archive, array $folderIds): bool
+    {
+        $current = $archive;
+        $depth = 0;
+
+        while ($current && $current->exists && $depth++ < 12) {
+            if (in_array((int) $current->id, $folderIds, true)) {
+                return true;
+            }
+            $current = $current->parent;
+        }
+
+        return false;
+    }
+
+    private function authorizeArchive(Request $request, Archive $archive): void
+    {
+        if ($this->isAdmin($request)) {
+            return;
+        }
+
+        abort_unless($this->isInScope($archive, $this->scopedFolderIds($request)), 403, 'Unauthorized');
+    }
+
+    /**
+     * Restrict a folder listing. Non-admins can walk
+     * Archive → reservations → their own reservation folders, nothing else.
+     */
+    private function scopeListing(Request $request, Archive $parent, $query): void
+    {
+        if ($this->isAdmin($request)) {
+            return;
+        }
+
+        $folderIds = $this->scopedFolderIds($request);
+
+        if ($this->isInScope($parent, $folderIds)) {
+            return;
+        }
+
+        if ($parent->isRoot()) {
+            $query->where('type', Archive::TYPE_FOLDER)->where('title', 'reservations');
+            return;
+        }
+
+        $isReservationsRoot = (int) $parent->parent_id === 0
+            && $parent->isFolder()
+            && $parent->title === 'reservations';
+
+        abort_unless($isReservationsRoot, 403, 'Unauthorized');
+
+        $query->whereIn('id', $folderIds);
     }
 
     private function parentPath(Archive $archive): array

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Traits\ResolvesDoctor;
+use App\Models\CashClosing;
 use App\Models\Financial;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
@@ -95,6 +96,10 @@ class TransactionController extends Controller
             abort(403);
         }
 
+        if (CashClosing::isClosed(CashClosing::clinicId($request->user()), now()->toDateString())) {
+            return response()->json(['message' => 'Today\'s cash is already closed. Ask the doctor to re-open it.'], 422);
+        }
+
         $doctorId = $financial->doctor_id;
 
         $request->validate([
@@ -157,6 +162,10 @@ class TransactionController extends Controller
 
         if (!in_array($financial->doctor_id, $doctorIds)) {
             abort(403);
+        }
+
+        if (CashClosing::isClosed(CashClosing::clinicId($request->user()), now()->toDateString())) {
+            return response()->json(['message' => 'Today\'s cash is already closed. Ask the doctor to re-open it.'], 422);
         }
 
         $doctorId = $financial->doctor_id;
@@ -225,6 +234,10 @@ class TransactionController extends Controller
 
         if (!in_array($financial->doctor_id, $doctorIds) || $transaction->financial_id !== $financial->id) {
             abort(403);
+        }
+
+        if (CashClosing::isClosed(CashClosing::clinicId($request->user()), $transaction->created_at->toDateString())) {
+            return response()->json(['message' => 'That day\'s cash is already closed. Ask the doctor to re-open it.'], 422);
         }
 
         DB::transaction(function () use ($financial, $transaction) {

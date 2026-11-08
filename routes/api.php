@@ -5,6 +5,7 @@ use App\Http\Controllers\AssistantController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\DoctorScheduleController;
+use App\Http\Controllers\CashClosingController;
 use App\Http\Controllers\FinancialController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OpenFdaController;
@@ -137,6 +138,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Doctor, assistant and sub-doctor can complete reservations
     Route::middleware(['role:doctor,assistant,sub-doctor'])->group(function () {
         Route::post('/reservations/{reservation}/complete', [ReservationController::class, 'complete']);
+        Route::post('/reservations/{reservation}/no-show', [ReservationController::class, 'markNoShow']);
     });
 
     // Doctor, assistant and sub-doctor can print prescriptions
@@ -221,6 +223,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/purchases/stats', [PurchaseController::class, 'stats']);
         Route::get('/purchases/{purchase}', [PurchaseController::class, 'show']);
     });
+
+    // Daily cash close
+    Route::middleware(['role:doctor,assistant'])->group(function () {
+        Route::get('/cash-closings/preview', [CashClosingController::class, 'preview']);
+        Route::get('/cash-closings', [CashClosingController::class, 'index']);
+    });
+    Route::post('/cash-closings', [CashClosingController::class, 'store'])->middleware('role:assistant');
+    Route::delete('/cash-closings/{cashClosing}', [CashClosingController::class, 'reopen'])->middleware('role:doctor');
 
     Route::middleware(['role:assistant'])->group(function () {
         Route::post('/financials', [FinancialController::class, 'store']);
